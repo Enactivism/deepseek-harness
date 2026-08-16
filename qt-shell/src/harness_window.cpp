@@ -1,17 +1,23 @@
 #include "harness_window.h"
 
 #include <QCloseEvent>
+#include <QColor>
 #include <QCoreApplication>
 #include <QDir>
+#include <QFrame>
+#include <QGraphicsDropShadowEffect>
+#include <QKeySequence>
 #include <QLabel>
 #include <QMenuBar>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
+#include <QProgressBar>
 #include <QProcess>
 #include <QProcessEnvironment>
+#include <QPushButton>
 #include <QStandardPaths>
-#include <QStatusBar>
+#include <QStackedLayout>
 #include <QTimer>
 #include <QUrl>
 #include <QVBoxLayout>
@@ -40,24 +46,174 @@ HarnessWindow::HarnessWindow(QWidget *parent)
       network_manager_(new QNetworkAccessManager(this)),
       readiness_timer_(new QTimer(this)),
       web_view_(new QWebEngineView(this)),
-      status_label_(new QLabel("正在启动 DeepSeek Harness…", this)) {
+      state_view_(new QWidget(this)),
+      state_icon_(new QLabel("DH", state_view_)),
+      state_kicker_(new QLabel("DESKTOP SHELL", state_view_)),
+      state_title_(new QLabel(state_view_)),
+      state_description_(new QLabel(state_view_)),
+      state_progress_(new QProgressBar(state_view_)),
+      state_action_(new QPushButton("重新连接", state_view_)) {
     setWindowTitle("DeepSeek Harness");
+    setMinimumSize(960, 640);
     resize(1440, 920);
+
+    setStyleSheet(R"(
+        QMainWindow {
+            background: #0d1118;
+        }
+        QMenuBar {
+            background: #151a23;
+            color: #aab5c6;
+            border: none;
+            padding: 4px 8px;
+        }
+        QMenuBar::item {
+            padding: 5px 9px;
+            border-radius: 6px;
+        }
+        QMenuBar::item:selected {
+            background: #263142;
+            color: #f5f7fb;
+        }
+        QMenu {
+            background: #171e29;
+            color: #e8edf5;
+            border: 1px solid #2b3544;
+            padding: 6px;
+        }
+        QMenu::item {
+            padding: 7px 26px 7px 12px;
+            border-radius: 6px;
+        }
+        QMenu::item:selected {
+            background: #263449;
+        }
+        #stateIcon {
+            background: #66e3bd;
+            color: #07151a;
+            border-radius: 18px;
+            font-weight: 700;
+            letter-spacing: 1px;
+            font-size: 20px;
+        }
+        #stateKicker {
+            color: #7e8a9d;
+            font-size: 11px;
+            letter-spacing: 1px;
+        }
+        #stateView {
+            background: #10151e;
+        }
+        #stateCard {
+            background: #171e29;
+            border: 1px solid #2b3748;
+            border-radius: 18px;
+        }
+        #stateTitle {
+            color: #f4f7fb;
+            font-size: 21px;
+            font-weight: 650;
+        }
+        #stateDescription {
+            color: #98a5b8;
+            font-size: 13px;
+        }
+        #stateProgress {
+            background: #273242;
+            border: none;
+            border-radius: 2px;
+            min-height: 4px;
+            max-height: 4px;
+        }
+        #stateProgress::chunk {
+            background: #66e3bd;
+            border-radius: 2px;
+        }
+        #stateAction {
+            background: #66e3bd;
+            color: #08151a;
+            border: none;
+            border-radius: 8px;
+            padding: 8px 18px;
+            min-height: 34px;
+            font-weight: 650;
+        }
+        #stateAction:hover {
+            background: #82ebcb;
+        }
+        #stateAction:pressed {
+            background: #51cda8;
+        }
+    )");
 
     auto *container = new QWidget(this);
     auto *layout = new QVBoxLayout(container);
     layout->setContentsMargins(0, 0, 0, 0);
-    layout->addWidget(web_view_);
+    layout->setSpacing(0);
+    content_stack_ = new QStackedLayout;
+    content_stack_->setContentsMargins(0, 0, 0, 0);
+    layout->addLayout(content_stack_, 1);
+
+    web_view_->setObjectName("harnessWebView");
+    web_view_->setStyleSheet("border: none; background: #10151e;");
+    content_stack_->addWidget(web_view_);
+
+    state_view_->setObjectName("stateView");
+    auto *state_outer_layout = new QVBoxLayout(state_view_);
+    state_outer_layout->setContentsMargins(20, 20, 20, 20);
+    state_outer_layout->addStretch(1);
+    auto *state_card = new QFrame(state_view_);
+    state_card->setObjectName("stateCard");
+    state_card->setMaximumWidth(520);
+    auto *shadow = new QGraphicsDropShadowEffect(state_card);
+    shadow->setBlurRadius(32);
+    shadow->setOffset(0, 12);
+    shadow->setColor(QColor(0, 0, 0, 95));
+    state_card->setGraphicsEffect(shadow);
+    auto *state_card_layout = new QVBoxLayout(state_card);
+    state_card_layout->setContentsMargins(34, 32, 34, 30);
+    state_card_layout->setSpacing(9);
+    state_icon_->setObjectName("stateIcon");
+    state_icon_->setAlignment(Qt::AlignCenter);
+    state_icon_->setFixedSize(52, 52);
+    state_card_layout->addWidget(state_icon_, 0, Qt::AlignHCenter);
+    state_kicker_->setObjectName("stateKicker");
+    state_kicker_->setAlignment(Qt::AlignCenter);
+    state_card_layout->addWidget(state_kicker_);
+    state_title_->setObjectName("stateTitle");
+    state_title_->setAlignment(Qt::AlignCenter);
+    state_card_layout->addWidget(state_title_);
+    state_description_->setObjectName("stateDescription");
+    state_description_->setAlignment(Qt::AlignCenter);
+    state_description_->setWordWrap(true);
+    state_card_layout->addWidget(state_description_);
+    state_progress_->setObjectName("stateProgress");
+    state_progress_->setRange(0, 0);
+    state_progress_->setTextVisible(false);
+    state_progress_->setFixedHeight(4);
+    state_card_layout->addSpacing(6);
+    state_card_layout->addWidget(state_progress_);
+    state_action_->setObjectName("stateAction");
+    state_action_->setCursor(Qt::PointingHandCursor);
+    state_action_->setVisible(false);
+    connect(state_action_, &QPushButton::clicked, this, &HarnessWindow::retryHarness);
+    state_card_layout->addSpacing(7);
+    state_card_layout->addWidget(state_action_, 0, Qt::AlignHCenter);
+    state_outer_layout->addWidget(state_card, 0, Qt::AlignHCenter);
+    state_outer_layout->addStretch(1);
+    content_stack_->addWidget(state_view_);
+    content_stack_->setCurrentWidget(state_view_);
     setCentralWidget(container);
 
     auto *file_menu = menuBar()->addMenu("文件");
     auto *reload_action = file_menu->addAction("重新加载");
-    connect(reload_action, &QAction::triggered, web_view_, &QWebEngineView::reload);
+    reload_action->setShortcut(QKeySequence::Refresh);
+    connect(reload_action, &QAction::triggered, this, &HarnessWindow::reloadWebView);
     file_menu->addSeparator();
     auto *quit_action = file_menu->addAction("退出");
     connect(quit_action, &QAction::triggered, this, &QWidget::close);
 
-    statusBar()->addWidget(status_label_);
+    showLoadingState("正在连接本地工作区", "正在启动 Harness 服务并等待网页插件图…");
     readiness_timer_->setInterval(kReadinessIntervalMs);
     connect(readiness_timer_, &QTimer::timeout, this, &HarnessWindow::probeHarness);
     connect(server_, &QProcess::started, this, [this] {
@@ -105,10 +261,13 @@ HarnessWindow::HarnessWindow(QWidget *parent)
                 << web_view_->url();
         if (!ok) {
             if (page_retry_attempts_ >= kMaxPageRetries) {
-                updateStatus("网页加载失败，请从菜单重新加载。" );
+                showErrorState("网页加载失败", "请检查本地 Harness 服务状态，然后重新连接。" );
                 return;
             }
             ++page_retry_attempts_;
+            showLoadingState("网页加载失败，正在重试", QString("第 %1/%2 次尝试…")
+                             .arg(page_retry_attempts_)
+                             .arg(kMaxPageRetries));
             updateStatus(QString("网页加载失败，正在重试（%1/%2）…")
                              .arg(page_retry_attempts_)
                              .arg(kMaxPageRetries));
@@ -136,16 +295,20 @@ HarnessWindow::HarnessWindow(QWidget *parent)
                                 << body.size();
                         qInfo().noquote() << "[deepseek-harness-qt] WebEngine body text:"
                                           << body.simplified().left(400);
+                        content_stack_->setCurrentWidget(web_view_);
                         updateStatus("已连接到本地 Harness");
                         return;
                     }
                     qWarning().noquote() << "[deepseek-harness-qt] Web boot is still pending; retrying:"
                                          << body.left(500);
                     if (page_retry_attempts_ >= kMaxPageRetries) {
-                        updateStatus("Harness 插件启动失败，请从菜单重新加载。" );
+                        showErrorState("插件图启动失败", "Harness 服务已经响应，但前端插件没有完成启动。" );
                         return;
                     }
                     ++page_retry_attempts_;
+                    showLoadingState("正在启动网页插件", QString("第 %1/%2 次尝试…")
+                                     .arg(page_retry_attempts_)
+                                     .arg(kMaxPageRetries));
                     updateStatus(QString("Harness 插件仍在启动，正在重试（%1/%2）…")
                                      .arg(page_retry_attempts_)
                                      .arg(kMaxPageRetries));
@@ -243,6 +406,7 @@ void HarnessWindow::showHarnessReady() {
     if (page_loaded_ || stopping_) return;
     page_loaded_ = true;
     readiness_timer_->stop();
+    showLoadingState("正在载入工作区", "本地服务已就绪，正在加载 Harness 网页插件…");
     updateStatus("Web 服务已就绪，等待前端插件稳定…");
     QTimer::singleShot(kInitialPageDelayMs, this, [this] {
         if (!stopping_) web_view_->setUrl(QUrl(kHarnessUrl));
@@ -250,17 +414,69 @@ void HarnessWindow::showHarnessReady() {
 }
 
 void HarnessWindow::showServerError(const QString &message) {
+    page_loaded_ = false;
+    readiness_timer_->stop();
+    showErrorState("无法连接到 Harness", message + "\n请确认 Node.js 与 pnpm 已安装，然后重试。" );
     updateStatus("无法启动 Harness：" + message + "。请确认 Node.js 与 pnpm 已安装。");
-    const auto html = QStringLiteral(
-        "<html><body style='font-family:-apple-system,sans-serif;padding:32px'>"
-        "<h2>DeepSeek Harness 启动失败</h2><p>%1</p>"
-        "<p>请查看终端中的 <code>[deepseek-harness-qt]</code> 日志。</p>"
-        "</body></html>").arg(message.toHtmlEscaped());
-    web_view_->setHtml(html);
+}
+
+void HarnessWindow::showLoadingState(const QString &title, const QString &description) {
+    state_icon_->setText("DH");
+    state_icon_->setStyleSheet(QString());
+    state_kicker_->setText("DESKTOP SHELL");
+    state_title_->setText(title);
+    state_description_->setText(description);
+    state_progress_->setVisible(true);
+    state_action_->setVisible(false);
+    state_action_->setEnabled(true);
+    content_stack_->setCurrentWidget(state_view_);
+}
+
+void HarnessWindow::showErrorState(const QString &title, const QString &description) {
+    state_icon_->setText("!");
+    state_icon_->setStyleSheet(
+        "background: #ff7a90; color: #241018; border-radius: 26px; font-size: 22px; font-weight: 700;");
+    state_kicker_->setText("LOCAL SERVICE");
+    state_title_->setText(title);
+    state_description_->setText(description);
+    state_progress_->setVisible(false);
+    state_action_->setVisible(true);
+    state_action_->setEnabled(true);
+    content_stack_->setCurrentWidget(state_view_);
+}
+
+void HarnessWindow::retryHarness() {
+    if (stopping_) return;
+
+    page_loaded_ = false;
+    page_retry_attempts_ = 0;
+    readiness_attempts_ = 0;
+    probe_in_flight_ = false;
+    showLoadingState("正在重新连接", "重新检查本地 Harness 服务…");
+
+    if (server_->state() == QProcess::NotRunning) {
+        startHarness();
+        return;
+    }
+
+    readiness_timer_->start();
+    probeHarness();
+}
+
+void HarnessWindow::reloadWebView() {
+    if (server_->state() != QProcess::Running || !page_loaded_) {
+        retryHarness();
+        return;
+    }
+
+    page_retry_attempts_ = 0;
+    showLoadingState("正在刷新工作区", "重新加载网页插件和会话状态…");
+    updateStatus("正在重新加载 Harness…");
+    web_view_->reload();
 }
 
 void HarnessWindow::updateStatus(const QString &message) {
-    status_label_->setText(message.left(240));
+    qInfo().noquote() << "[deepseek-harness-qt] Status:" << message.left(240);
 }
 
 void HarnessWindow::closeEvent(QCloseEvent *event) {
