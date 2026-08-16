@@ -1,23 +1,25 @@
 # DeepSeek Harness Qt shell
 
-这是 DeepSeek Harness 的 Qt 6 桌面容器。它不复制 Harness 的 Web/插件逻辑，而是：
+English | [中文](README.zh.md)
 
-1. 通过 `QProcess` 启动 `pnpm dsh web`；
-2. 通过 `QWebEngineView` 加载 `http://127.0.0.1:3080`；
-3. 关闭窗口时终止由它启动的 Harness 服务。
+This directory contains the Qt 6 desktop shell for DeepSeek Harness. It does not duplicate the Harness Web UI or plugin runtime. Instead, it:
 
-## 构建
+1. starts `pnpm dsh web` through `QProcess`;
+2. loads `http://127.0.0.1:3080` through `QWebEngineView`;
+3. terminates the Harness service it owns when the window closes.
 
-需要 Qt 6、Qt WebEngine、CMake、Node.js 22+ 和 pnpm（也可以使用 Node 自带的 Corepack）。macOS + Homebrew 可直接安装：
+## Build
+
+The shell requires Qt 6, Qt WebEngine, CMake, a supported Node.js release (`^22.19.0` or `>=24.0.0`), and pnpm or Corepack. On macOS with Homebrew, install the native dependencies with:
 
 ```bash
 brew install qt node@22
 ```
 
-本机验证使用 Qt 6.11.1，安装前缀为 `/opt/homebrew/opt/qt`。
+The validated local environment uses Qt 6.11.1 at `/opt/homebrew/opt/qt`.
 
 ```bash
-cd /path/to/deepseek-harness-src
+cd /path/to/deepseek-harness
 pnpm install
 pnpm build
 
@@ -26,36 +28,30 @@ cmake -S qt-shell -B qt-shell/build \
 cmake --build qt-shell/build
 ```
 
-如果系统没有独立的 `pnpm`，可以把上面两条命令替换为 `corepack pnpm install` 和
-`corepack pnpm build`。如果本机 `~/.npmrc` 配置了不可用的代理，安装时临时绕过用户配置：
+If the system has no standalone `pnpm`, replace the two pnpm commands with `corepack pnpm install` and `corepack pnpm build`. If `~/.npmrc` contains an unavailable proxy, bypass the user configuration for this installation only:
 
 ```bash
 NPM_CONFIG_USERCONFIG=/dev/null corepack pnpm install --frozen-lockfile
 NPM_CONFIG_USERCONFIG=/dev/null corepack pnpm build
 ```
 
-构建时，CMake 会把当前 Harness 源码目录写入 `.app` 作为默认根目录；也可以通过 `DSH_ROOT`
-覆盖它：
+CMake embeds the current Harness checkout as the default source root. Set `DSH_ROOT` to override it:
 
 ```bash
-DSH_ROOT=/path/to/deepseek-harness-src \
+DSH_ROOT=/path/to/deepseek-harness \
   qt-shell/build/deepseek-harness-qt.app/Contents/MacOS/deepseek-harness-qt
 ```
 
-如果从 Finder 启动导致 Qt 找不到 `pnpm`，可以显式指定：
+Finder launches applications with a reduced `PATH`. Set `PNPM_EXECUTABLE` when automatic Corepack and pnpm discovery cannot find the required executable:
 
 ```bash
-DSH_ROOT=/path/to/deepseek-harness-src \
+DSH_ROOT=/path/to/deepseek-harness \
 PNPM_EXECUTABLE=/path/to/pnpm \
   qt-shell/build/deepseek-harness-qt.app/Contents/MacOS/deepseek-harness-qt
 ```
 
-外壳会按以下顺序处理启动：启动 `dsh web` 后轮询 `127.0.0.1:3080` 的 HTTP 状态，确认服务
-可访问后再等待前端插件图稳定；若 WebEngine 首次加载时仍处于 `Loading plugins…`，会自动重试。
-因此 Finder 的精简 `PATH` 不再是必要条件，Qt 会自动尝试 Homebrew Node 22 的 Corepack 和本机
-fallback pnpm 路径。
+After starting `dsh web`, the shell polls `127.0.0.1:3080` for HTTP readiness and then waits for the frontend plugin graph to settle. If Qt WebEngine first observes `Loading plugins…`, the shell retries automatically.
 
-启动诊断信息会输出到终端，前缀为 `[deepseek-harness-qt]`。
+Startup diagnostics use the `[deepseek-harness-qt]` prefix on standard error.
 
-构建产物是 macOS arm64 `.app`：
-`qt-shell/build/deepseek-harness-qt.app`。
+The validated macOS arm64 build artifact is `qt-shell/build/deepseek-harness-qt.app`.
