@@ -1,14 +1,11 @@
 /**
- * Three-column shell frame, registered into the built-in 'root' slot (the web
- * shell renders only 'root'). Owns the grid tracks (sidebar | center |
- * details), the drag handles (pointer capture + rAF throttle), the concession
- * chain (columns.ts), and the child-slot render decisions: the sidebar slot
- * renders HERE with live parameters from the concession solve, and the
- * session-aware occupants render in fixed column positions; strict entries
- * gate themselves on current-session availability while session-maybe
- * entries retain identity. Pure component: everything arrives
- * through the three framework shares — zero cordis or framework imports,
- * zero self-made hooks.
+ * Shell frame registered into the built-in 'root' slot (the web shell renders
+ * only 'root'). Owns the outer grid tracks (sidebar | center | details), the
+ * center workbench split (conversation | additive right workspace), the drag
+ * handles (pointer capture + rAF throttle), the concession chain (columns.ts),
+ * and the child-slot render decisions. Pure component: everything arrives
+ * through the framework shares — zero cordis or framework imports, zero
+ * self-made hooks.
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
@@ -20,10 +17,10 @@ import css from './AppFrame.module.css'
 /** Full composed props: runtime share + child-slot render share + store share. */
 export type AppFrameProps =
   & PropsRuntime<'root'>
-  & PropsRenderSlots<'sidebar' | 'conversation' | 'details' | 'shell.overlay'>
+  & PropsRenderSlots<'sidebar' | 'conversation' | 'details' | 'shell.right' | 'shell.overlay'>
   & PropsStore<ReturnType<typeof createLayoutStore>>
 
-/** Center column grid item (session-body building block). */
+/** Center workbench item containing the conversation and additive workspace. */
 function CenterColumn(props: { children?: ReactNode }) {
   return <div className={css.centerCol}>{props.children}</div>
 }
@@ -83,7 +80,7 @@ function DragHandle(props: { side: 'sidebar' | 'details'; left: number; onStart:
   )
 }
 
-/** The three-column frame (see module doc). */
+/** The shell frame (see module doc). */
 export function AppFrame({
   useStore,
   useSessions,
@@ -182,12 +179,20 @@ export function AppFrame({
         })}
       </div>
       <>
-        {/* Both column occupants stay at fixed tree positions from first
-            paint — no loading gate: a bare status line reads worse than
-            the shell's own pending rendering. The conversation
-            is session-maybe; the strict details entry naturally renders
-            empty while no session is current. */}
-        <CenterColumn>{renderSlot('conversation', {})}</CenterColumn>
+        {/* The conversation and additive right workspace are fixed sibling
+            surfaces inside the center workbench. The right workspace is not
+            an overlay, so its width is accounted for by flex layout and the
+            conversation composer cannot be covered by it. */}
+        <CenterColumn>
+          <div className={css.conversationPane}>{renderSlot('conversation', {})}</div>
+          <aside className={css.rightWorkspace} data-right-workspace>
+            {renderSlot('shell.right', {})}
+          </aside>
+        </CenterColumn>
+        {/* The details occupant stays at its fixed outer-column position from
+            first paint — no loading gate: a bare status line reads worse than
+            the shell's own pending rendering. The strict details entry
+            naturally renders empty while no session is current. */}
         <DetailsColumn>{renderSlot('details', {})}</DetailsColumn>
       </>
       <div className={css.overlayLayer} data-shell-overlay>

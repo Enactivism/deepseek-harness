@@ -1,0 +1,490 @@
+.root {
+  --live2d-panel-background: var(--dsw-alias-bg-layer-1);
+  --live2d-panel-border: var(--dsw-alias-border-l2);
+  --live2d-muted: var(--dsw-alias-label-tertiary);
+  --live2d-soft: var(--dsw-alias-bg-layer-2);
+  --live2d-accent: var(--dsw-alias-brand-primary);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  box-sizing: border-box;
+  padding: 14px 14px 12px;
+  overflow: hidden;
+  color: var(--dsw-alias-label-primary);
+  background: linear-gradient(160deg, var(--live2d-panel-background), var(--dsw-alias-bg-base));
+  pointer-events: auto;
+}
+
+.root::before {
+  position: absolute;
+  inset: 0 22% auto 22%;
+  height: 1px;
+  content: '';
+  background: var(--live2d-accent);
+  opacity: 0.8;
+}
+
+.header {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 38px;
+  padding: 1px 2px 11px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+}
+
+.brandMark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 10px;
+  color: var(--dsw-alias-label-primary-foreground);
+  background: var(--live2d-accent);
+  box-shadow: 0 5px 16px var(--dsw-alias-button-primary-hover);
+}
+
+.heading {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.title,
+.subtitle,
+.emptyTitle,
+.emptyDescription,
+.localNotice,
+.modelName,
+.modelFiles,
+.controlsTitle,
+.rangeLabel,
+.statusText {
+  margin: 0;
+}
+
+.title {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subtitle {
+  color: var(--live2d-muted);
+  font-size: 11px;
+  line-height: 15px;
+}
+
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  align-self: flex-start;
+  max-width: 100%;
+  color: var(--live2d-muted);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.statusDot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--live2d-muted);
+}
+
+.root[data-state='ready'] .statusDot {
+  background: var(--dsw-alias-state-success-primary);
+}
+
+.root[data-state='loading'] .statusDot,
+.root[data-running='true'] .statusDot {
+  background: var(--live2d-accent);
+}
+
+.root[data-state='error'] .statusDot {
+  background: var(--dsw-alias-state-error-primary);
+}
+
+.root[data-running='true'] .statusDot {
+  animation: live2d-breathe 1.8s ease-in-out infinite;
+}
+
+.iconButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  color: var(--live2d-muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.iconButton:hover {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.iconButton:focus-visible,
+.restoreButton:focus-visible,
+.uploadButton:focus-visible,
+.removeButton:focus-visible,
+.controlButton:focus-visible {
+  outline: 2px solid var(--live2d-accent);
+  outline-offset: 2px;
+}
+
+.stage {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  min-height: 240px;
+  height: auto;
+  overflow: hidden;
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 50% 15%, var(--dsw-alias-bg-layer-2), transparent 58%),
+    linear-gradient(160deg, var(--dsw-alias-bg-base), var(--dsw-alias-bg-layer-1));
+}
+
+.stage::before,
+.stage::after {
+  position: absolute;
+  content: '';
+  pointer-events: none;
+}
+
+.stage::before {
+  top: -76px;
+  right: -42px;
+  width: 170px;
+  height: 170px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 50%;
+  opacity: 0.7;
+}
+
+.stage::after {
+  right: 20px;
+  bottom: 18px;
+  left: 20px;
+  height: 1px;
+  background: var(--dsw-alias-border-l1);
+}
+
+.canvas {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  height: 100%;
+  transform-origin: center bottom;
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.emptyState {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 230px;
+  padding: 20px;
+  text-align: center;
+}
+
+.emptyGlyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 15px;
+  color: var(--dsw-alias-label-primary-foreground);
+  background: var(--live2d-accent);
+  box-shadow: 0 12px 28px var(--dsw-alias-button-primary-hover);
+}
+
+.emptyTitle {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.emptyDescription {
+  color: var(--live2d-muted);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.localNotice {
+  color: var(--dsw-alias-label-caption);
+  font-size: 10px;
+  line-height: 15px;
+}
+
+.modelBadge {
+  position: absolute;
+  z-index: 2;
+  right: 10px;
+  bottom: 10px;
+  max-width: calc(100% - 20px);
+  padding: 4px 8px;
+  overflow: hidden;
+  color: var(--dsw-alias-label-secondary);
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 9px;
+  background: var(--dsw-alias-bg-overlay);
+  font-size: 10px;
+  line-height: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  backdrop-filter: blur(8px);
+}
+
+.loading {
+  position: absolute;
+  z-index: 3;
+  right: 18px;
+  bottom: 18px;
+  left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px 10px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 11px;
+  background: var(--dsw-alias-bg-overlay);
+  backdrop-filter: blur(8px);
+}
+
+.loadingTrack {
+  width: 100%;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--dsw-alias-fill-tsp-secondary);
+}
+
+.loadingBar {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--live2d-accent);
+  transition: width 140ms ease;
+}
+
+.statusText {
+  color: var(--live2d-muted);
+  font-size: 10px;
+  line-height: 14px;
+  text-align: right;
+}
+
+.error {
+  margin: 0 2px;
+  color: var(--dsw-alias-state-error-primary);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.modelInfo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 0 2px;
+}
+
+.modelInfoText {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.modelName {
+  overflow: hidden;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  line-height: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.modelFiles {
+  color: var(--live2d-muted);
+  font-size: 10px;
+  line-height: 14px;
+}
+
+.controls {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  padding: 12px 10px 2px;
+  border-top: 1px solid var(--dsw-alias-border-l1);
+}
+
+.controlsHeader,
+.rangeHeader,
+.footer {
+  display: flex;
+  align-items: center;
+}
+
+.controlsHeader,
+.rangeHeader {
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.controlsTitle {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+}
+
+.rangeLabel,
+.rangeValue {
+  color: var(--live2d-muted);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.rangeValue {
+  font-variant-numeric: tabular-nums;
+}
+
+.range {
+  width: 100%;
+  height: 4px;
+  margin: 0;
+  accent-color: var(--live2d-accent);
+  cursor: pointer;
+}
+
+.footer {
+  gap: 7px;
+  min-height: 30px;
+  padding-top: 10px;
+  border-top: 1px solid var(--dsw-alias-border-l1);
+}
+
+.uploadButton {
+  flex: 1;
+  min-width: 0;
+}
+
+.removeButton {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.controlButton {
+  flex: none;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--live2d-muted);
+  background: transparent;
+  font-size: 11px;
+  line-height: 24px;
+  cursor: pointer;
+}
+
+.controlButton:hover {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.hiddenInput {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.restoreButton {
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  margin: auto 14px;
+  padding: 0 12px 0 10px;
+  color: var(--dsw-alias-label-primary);
+  border: 1px solid var(--live2d-panel-border);
+  border-radius: 17px;
+  background: var(--live2d-panel-background);
+  font-size: 12px;
+  cursor: pointer;
+  pointer-events: auto;
+  backdrop-filter: blur(16px);
+}
+
+.restoreButton:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.restoreDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--live2d-accent);
+}
+
+@keyframes live2d-breathe {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 var(--dsw-alias-button-primary-hover);
+  }
+
+  50% {
+    box-shadow: 0 0 0 4px transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .canvas,
+  .loadingBar {
+    transition: none;
+  }
+
+  .root[data-running='true'] .statusDot {
+    animation: none;
+  }
+}
+
+@media (max-width: 1180px) {
+  .root {
+    padding-right: 12px;
+    padding-left: 12px;
+  }
+}

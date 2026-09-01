@@ -24,7 +24,9 @@
 #include <QWebEngineView>
 #include <QWidget>
 #include <QFileInfo>
+#include <QFileDialog>
 #include <QDebug>
+#include <QWebEnginePage>
 
 namespace {
 constexpr auto kHarnessUrl = "http://127.0.0.1:3080";
@@ -38,6 +40,60 @@ constexpr int kInitialPageDelayMs = 3000;
 constexpr int kPageBootInspectionDelayMs = 1200;
 constexpr int kPageRetryDelayMs = 2000;
 constexpr int kMaxPageRetries = 3;
+
+class HarnessWebPage final : public QWebEnginePage {
+public:
+    explicit HarnessWebPage(QObject *parent = nullptr)
+        : QWebEnginePage(parent) {}
+
+protected:
+    QStringList chooseFiles(FileSelectionMode mode,
+                            const QStringList &old_files,
+                            const QStringList &accepted_mime_types) override {
+        Q_UNUSED(accepted_mime_types);
+
+        // This opt-in path makes local integration tests deterministic while
+        // keeping normal users on the native folder picker.
+        if (mode == FileSelectUploadFolder) {
+            const QString preset_path = qEnvironmentVariable("DSH_LIVE2D_MODEL_PATH");
+            const QFileInfo preset_info(preset_path);
+            if (!preset_path.isEmpty() && preset_info.isDir()) {
+                return {preset_info.absoluteFilePath()};
+            }
+        }
+
+        QFileDialog dialog(nullptr);
+        dialog.setWindowTitle(mode == FileSelectUploadFolder
+                                  ? QStringLiteral("选择 Live2D 模型文件夹")
+                                  : QStringLiteral("选择文件"));
+        if (!old_files.isEmpty()) {
+            const QFileInfo old_info(old_files.constFirst());
+            if (old_info.exists()) {
+                dialog.setDirectory(old_info.isDir() ? old_info.absoluteFilePath()
+                                                      : old_info.absolutePath());
+            }
+        }
+
+        switch (mode) {
+        case FileSelectOpen:
+            dialog.setFileMode(QFileDialog::ExistingFile);
+            break;
+        case FileSelectOpenMultiple:
+            dialog.setFileMode(QFileDialog::ExistingFiles);
+            break;
+        case FileSelectUploadFolder:
+            dialog.setFileMode(QFileDialog::Directory);
+            dialog.setOption(QFileDialog::ShowDirsOnly, true);
+            break;
+        case FileSelectSave:
+            dialog.setAcceptMode(QFileDialog::AcceptSave);
+            dialog.setFileMode(QFileDialog::AnyFile);
+            break;
+        }
+
+        return dialog.exec() == QDialog::Accepted ? dialog.selectedFiles() : QStringList{};
+    }
+};
 }
 
 HarnessWindow::HarnessWindow(QWidget *parent)
@@ -156,6 +212,7 @@ HarnessWindow::HarnessWindow(QWidget *parent)
 
     web_view_->setObjectName("harnessWebView");
     web_view_->setStyleSheet("border: none; background: #10151e;");
+    web_view_->setPage(new HarnessWebPage(web_view_));
     content_stack_->addWidget(web_view_);
 
     state_view_->setObjectName("stateView");

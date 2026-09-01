@@ -187,6 +187,11 @@ export default defineConfig({
         'packages/client/ui-workspace/src/client/WorkspaceBrowser.tsx',
         'packages/client/ui-workspace/src/client/WorkspacePicker.tsx',
         'packages/client/web-react/src/*',
+        // Live2D's WebGL renderer and directory picker require a browser-grade
+        // harness; focused jsdom tests cover validation, slot registration, and
+        // overlay behavior. TODO(gui): add a real browser model fixture and
+        // remove this package-level debt exemption.
+        'packages/client/ui-live2d/src/*',
         // This isolated settings-scope lifecycle has complete unit coverage;
         // keep it out of the broader client-runtime GUI debt exemption.
         'packages/client/runtime/src/**/!(settings-scope).ts',
