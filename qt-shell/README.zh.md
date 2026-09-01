@@ -8,7 +8,7 @@
 2. 通过 `QWebEngineView` 加载 `http://127.0.0.1:3080`；
 3. 关闭窗口时终止由它持有的 Harness 服务。
 
-## 构建
+## 在 macOS 上构建
 
 桌面外壳需要 Qt 6、Qt WebEngine、CMake、受支持的 Node.js 版本（`^22.19.0` 或 `>=24.0.0`），以及 pnpm 或 Corepack。在使用 Homebrew 的 macOS 上，通过以下命令安装原生依赖：
 
@@ -55,3 +55,45 @@ PNPM_EXECUTABLE=/path/to/pnpm \
 启动诊断信息通过标准错误输出，并使用 `[deepseek-harness-qt]` 前缀。
 
 经过验证的 macOS arm64 构建产物为 `qt-shell/build/deepseek-harness-qt.app`。
+
+## 在 Ubuntu 上构建 Qt 6 桌面外壳
+
+安装 Qt 6、Qt WebEngine、CMake 和编译工具：
+
+```bash
+sudo apt update
+sudo apt install qt6-base-dev qt6-webengine-dev qt6-webengine-dev-tools \
+  cmake build-essential
+```
+
+构建 Harness 和 Qt 桌面外壳：
+
+```bash
+cd /home/chacha/repo/deepseek-harness
+corepack enable
+corepack prepare pnpm@11.7.0 --activate
+corepack pnpm install --frozen-lockfile
+corepack pnpm build
+cmake -S qt-shell -B qt-shell/build
+cmake --build qt-shell/build --parallel
+```
+
+Linux 生成普通可执行文件，按以下方式启动：
+
+```bash
+DSH_ROOT="$PWD" \
+PNPM_EXECUTABLE="$(command -v corepack)" \
+./qt-shell/build/deepseek-harness-qt
+```
+
+如果启动失败，请检查显卡驱动和 OpenGL 版本。也可以禁用 GPU 加速并使用软件渲染：
+
+```bash
+export QTWEBENGINE_DISABLE_GPU=1
+export QT_QUICK_BACKEND=software
+export QT_WEBENGINE_RENDERER=software
+
+DSH_ROOT="$PWD" \
+PNPM_EXECUTABLE="$(command -v corepack)" \
+./qt-shell/build/deepseek-harness-qt
+```

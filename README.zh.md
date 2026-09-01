@@ -87,6 +87,48 @@ open qt-shell/build/deepseek-harness-qt.app
 
 可执行文件发现、`DSH_ROOT`、启动就绪检查和故障排查见 [Qt 外壳指南](qt-shell/README.md)。
 
+### 在 Ubuntu 上构建 Qt 6 桌面外壳
+
+安装 Qt 6、Qt WebEngine、CMake 和编译工具：
+
+```bash
+sudo apt update
+sudo apt install qt6-base-dev qt6-webengine-dev qt6-webengine-dev-tools \
+  cmake build-essential
+```
+
+构建 Harness 和 Qt 桌面外壳：
+
+```bash
+cd /home/chacha/repo/deepseek-harness
+corepack enable
+corepack prepare pnpm@11.7.0 --activate
+corepack pnpm install --frozen-lockfile
+corepack pnpm build
+cmake -S qt-shell -B qt-shell/build
+cmake --build qt-shell/build --parallel
+```
+
+Linux 生成普通可执行文件，按以下方式启动：
+
+```bash
+DSH_ROOT="$PWD" \
+PNPM_EXECUTABLE="$(command -v corepack)" \
+./qt-shell/build/deepseek-harness-qt
+```
+
+如果启动失败，请检查显卡驱动和 OpenGL 版本。也可以禁用 GPU 加速并使用软件渲染：
+
+```bash
+export QTWEBENGINE_DISABLE_GPU=1
+export QT_QUICK_BACKEND=software
+export QT_WEBENGINE_RENDERER=software
+
+DSH_ROOT="$PWD" \
+PNPM_EXECUTABLE="$(command -v corepack)" \
+./qt-shell/build/deepseek-harness-qt
+```
+
 ### 通过 npm 启动 Web UI
 
 安装 Node.js，然后直接启动上游发布的包：
