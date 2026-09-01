@@ -73,8 +73,8 @@ import {
  * methods take the business payload directly — the carrier mints the rpcId and wraps the
  * envelope. Business code needing the call's rpcId reads it from the RpcResponse echo.
  * Unary methods and respond accept an optional external AbortSignal as the last parameter.
- * Bounded calls merge it with the instance timeout via AbortSignal.any; user-paced calls
- * carry only that external signal. In both cases the signal rides beside the request, never
+ * Bounded calls merge it with the instance timeout; fallbacks cover browsers without
+ * AbortSignal.timeout/any. User-paced calls carry only that external signal. In both cases the signal rides beside the request, never
  * on the wire, like the stream signatures.
  * Stream methods accept an optional onOpen callback: it fires once the physical transport is
  * readable (before any frame) — the "stream established" signal
@@ -233,6 +233,51 @@ type UnaryTimeoutPolicy = 'default' | 'caller-signal-only'
 /** URL base for in-process handler injection (fake authority, opencode precedent). */
 const INTERNAL_BASE = 'http://dsh.internal'
 
+type AbortSignalStatics = typeof AbortSignal & {
+  any?: (signals: readonly AbortSignal[]) => AbortSignal
+  timeout?: (milliseconds: number) => AbortSignal
+}
+
+/** Create a deadline signal on browsers whose AbortSignal lacks the static timeout helper. */
+function timeoutSignal(milliseconds: number): AbortSignal {
+  const statics = AbortSignal as AbortSignalStatics
+  if (typeof statics.timeout === 'function') return statics.timeout(milliseconds)
+
+  const controller = new AbortController()
+  const timer = setTimeout(() => { controller.abort(timeoutError()) }, milliseconds)
+  controller.signal.addEventListener('abort', () => { clearTimeout(timer) }, { once: true })
+  return controller.signal
+}
+
+/** Combine cancellation signals on browsers whose AbortSignal lacks the static any helper. */
+function anySignal(signals: readonly AbortSignal[]): AbortSignal {
+  const statics = AbortSignal as AbortSignalStatics
+  if (typeof statics.any === 'function') return statics.any(signals)
+
+  const controller = new AbortController()
+  const listeners = new Map<AbortSignal, () => void>()
+  const abort = (signal: AbortSignal): void => {
+    controller.abort(signal.reason)
+    for (const [source, listener] of listeners) source.removeEventListener('abort', listener)
+  }
+  for (const signal of signals) {
+    if (signal.aborted) {
+      abort(signal)
+      return controller.signal
+    }
+    const listener = (): void => { abort(signal) }
+    listeners.set(signal, listener)
+    signal.addEventListener('abort', listener, { once: true })
+  }
+  return controller.signal
+}
+
+function timeoutError(): Error {
+  return typeof DOMException === 'function'
+    ? new DOMException('The operation was aborted due to timeout', 'TimeoutError')
+    : Object.assign(new Error('The operation was aborted due to timeout'), { name: 'TimeoutError' })
+}
+
 /**
  * Abstract fetch-carrier client. Subclasses supply the transport (doFetch) and may refine the
  * per-message tap (onEnvelope) — platform aspects stay in subclasses, protocol invariants stay
@@ -312,8 +357,8 @@ export abstract class AbstractApiClient implements IApiClient {
   ): Promise<Response> {
     const requestSignal = timeoutPolicy === 'default'
       ? signal === undefined
-        ? AbortSignal.timeout(this.timeoutMs)
-        : AbortSignal.any([AbortSignal.timeout(this.timeoutMs), signal])
+        ? timeoutSignal(this.timeoutMs)
+        : anySignal([timeoutSignal(this.timeoutMs), signal])
       : signal
     const response = await this.doFetch(new URL(path, this.resolveBase()), {
       method: 'POST',

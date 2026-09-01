@@ -371,6 +371,26 @@ describe('unary round trip', () => {
     await expect(never.sessions.list({})).rejects.toThrow()
   })
 
+  it('falls back when an older browser has neither AbortSignal static helper', async () => {
+    const timeoutDescriptor = Object.getOwnPropertyDescriptor(AbortSignal, 'timeout')
+    const anyDescriptor = Object.getOwnPropertyDescriptor(AbortSignal, 'any')
+    Object.defineProperty(AbortSignal, 'timeout', { configurable: true, value: undefined })
+    Object.defineProperty(AbortSignal, 'any', { configurable: true, value: undefined })
+    try {
+      const never = new InProcessApiClient({
+        fetch: (_i: RequestInfo | URL, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => { reject(new Error('aborted by fallback timeout')) })
+        }),
+      }, 25)
+      await expect(never.sessions.list({}, new AbortController().signal)).rejects.toThrow()
+    } finally {
+      if (timeoutDescriptor === undefined) delete (AbortSignal as unknown as Record<string, unknown>).timeout
+      else Object.defineProperty(AbortSignal, 'timeout', timeoutDescriptor)
+      if (anyDescriptor === undefined) delete (AbortSignal as unknown as Record<string, unknown>).any
+      else Object.defineProperty(AbortSignal, 'any', anyDescriptor)
+    }
+  })
+
   it('aborts a unary call through the caller-supplied external signal', async () => {
     // Real-fetch semantics: on abort the rejection is the signal's reason, and the abort
     // works even when the transport ignores the signal entirely (hung impl).

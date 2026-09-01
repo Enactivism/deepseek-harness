@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-01-qt-webengine-abortsignal-compat.md
+2026-09-01-qt-webengine-abortsignal-compat.md: 5ee68b5de3e5270a6096a08d89a080d69aa38639
+2026-09-01-qt-webengine-abortsignal-compat.zh.md: 6319f98b4369417bb8afe256a6b24416306b2a8d
