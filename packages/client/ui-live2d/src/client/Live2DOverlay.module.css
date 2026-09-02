@@ -20,6 +20,35 @@
   pointer-events: auto;
 }
 
+.root[data-desktop-pet='true'] {
+  width: 100vw;
+  height: 100vh;
+  padding: 0;
+  background: transparent;
+}
+
+.root[data-desktop-pet='true']::before,
+.root[data-desktop-pet='true'] .header,
+.root[data-desktop-pet='true'] .modelInfo,
+.root[data-desktop-pet='true'] .error,
+.root[data-desktop-pet='true'] .controls,
+.root[data-desktop-pet='true'] .footer,
+.root[data-desktop-pet='true'] .modelBadge,
+.root[data-desktop-pet='true'] .loading {
+  display: none;
+}
+
+.root[data-desktop-pet='true'] .stage {
+  min-height: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.root[data-desktop-pet='true'] .stage::before,
+.root[data-desktop-pet='true'] .stage::after {
+  display: none;
+}
+
 .root::before {
   position: absolute;
   inset: 0 22% auto 22%;

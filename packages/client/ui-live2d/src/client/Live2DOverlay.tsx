@@ -14,6 +14,8 @@ import type { PropsLocale, PropsRuntime, TranslateNS } from '@deepseek-ai/dsh-cl
 import type { Live2DKey } from './locales.ts'
 import { buildModelBundle, ModelImportError, type ModelBundle } from './model-files.ts'
 import { mountLive2D } from './renderer.ts'
+import { loadModelBundle, saveModelBundle } from './model-store.ts'
+import { broadcastModelBundle, subscribeToModelTransfer } from './model-transfer.ts'
 import css from './Live2DOverlay.module.css'
 
 /** Props composed by the shell's additive right-workspace slot. */
@@ -74,6 +76,12 @@ export function Live2DOverlay({ t, useSessions }: Live2DOverlayProps) {
   const [controlsOpen, setControlsOpen] = useState(false)
   const [scale, setScale] = useState(1)
   const [opacity, setOpacity] = useState(1)
+  const savePromiseRef = useRef<Promise<void> | null>(null)
+  const [desktopPet, setDesktopPet] = useState(() => (
+    typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('dshDesktopPet')
+  ))
+  const desktopShell = typeof navigator !== 'undefined'
+    && navigator.userAgent.includes('DeepSeekHarnessQt')
   const running = useSessions((snapshot: SessionListState) => {
     const current = snapshot.current
     return current !== undefined && snapshot.byId[current]?.running === true
@@ -104,6 +112,28 @@ export function Live2DOverlay({ t, useSessions }: Live2DOverlayProps) {
     })
   }, [model, t])
 
+  useEffect(() => {
+    if (!desktopPet) return
+    let cancelled = false
+    const unsubscribe = subscribeToModelTransfer((next) => {
+      if (!cancelled) setModel(next)
+    })
+    void loadModelBundle().then((next) => {
+      if (!cancelled && next !== null) setModel(next)
+    }).catch((storageError: unknown) => {
+      console.error('[ui-live2d] failed to restore model for desktop pet', storageError)
+    })
+    return () => { cancelled = true; unsubscribe() }
+  }, [desktopPet])
+
+  useEffect(() => {
+    const onDesktopPetChange = (): void => {
+      setDesktopPet(new URLSearchParams(window.location.search).has('dshDesktopPet'))
+    }
+    window.addEventListener('dsh-desktop-pet-change', onDesktopPetChange)
+    return () => { window.removeEventListener('dsh-desktop-pet-change', onDesktopPetChange) }
+  }, [])
+
   const openPicker = (): void => { fileInputRef.current?.click() }
 
   const onFilesSelected = (event: ChangeEvent<HTMLInputElement>): void => {
@@ -112,6 +142,10 @@ export function Live2DOverlay({ t, useSessions }: Live2DOverlayProps) {
     try {
       const next = buildModelBundle(files)
       setModel(next)
+      savePromiseRef.current = saveModelBundle(next)
+      void savePromiseRef.current.catch((storageError: unknown) => {
+        console.error('[ui-live2d] failed to persist model bundle', storageError)
+      })
       setState('loading')
       setError(null)
       setProgress(0)
@@ -147,6 +181,8 @@ export function Live2DOverlay({ t, useSessions }: Live2DOverlayProps) {
   return (
     <section
       className={css.root}
+      data-live2d-companion="true"
+      data-desktop-pet={desktopPet || undefined}
       data-state={state}
       data-running={running || undefined}
       aria-label={t('brand')}
@@ -280,6 +316,31 @@ export function Live2DOverlay({ t, useSessions }: Live2DOverlayProps) {
             onClick={() => { setControlsOpen(open => !open) }}
           >
             {controlsOpen ? t('action.closeControls') : t('action.openControls')}
+          </button>
+        )}
+        {desktopShell && model !== null && (
+          <button
+            type="button"
+            className={css.controlButton}
+            aria-label={desktopPet ? t('action.exitDesktopPet') : t('action.desktopPet')}
+            onClick={() => {
+              const next = model
+              if (next === null) return
+              void (savePromiseRef.current ?? Promise.resolve()).catch(() => undefined).then(() => {
+                window.location.assign('dsh://desktop-pet/toggle')
+                for (const delay of [500, 1500, 3000]) {
+                  window.setTimeout(() => {
+                    try {
+                      broadcastModelBundle(next)
+                    } catch (transferError: unknown) {
+                      console.error('[ui-live2d] failed to transfer model to desktop pet', transferError)
+                    }
+                  }, delay)
+                }
+              })
+            }}
+          >
+            {desktopPet ? t('action.exitDesktopPet') : t('action.desktopPet')}
           </button>
         )}
       </footer>

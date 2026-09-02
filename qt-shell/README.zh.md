@@ -52,6 +52,10 @@ PNPM_EXECUTABLE=/path/to/pnpm \
 
 启动 `dsh web` 后，外壳会轮询 `127.0.0.1:3080` 的 HTTP 就绪状态，再等待前端插件图稳定。如果 Qt WebEngine 首次读取到 `Loading plugins…`，外壳会自动重试。
 
+选择 Live2D 模型后，网页会提供“桌宠模式”。进入后，外壳创建第二个 WebEngine 视图并放入无边框、置顶的 360x480 小窗，同时保持主工作区窗口打开且不变。按住鼠标左键拖动可移动桌宠窗口，双击关闭桌宠窗口。所选模型通过同源 IndexedDB 共享，因此不需要重新选择文件。
+
+当主机 GPU 不可用时，外壳为两个 WebEngine 视图启用 WebGL2，并允许 Chromium 使用 SwiftShader 回退。外壳会清除会在 Chromium 启动前禁用或替换 WebGL 图形路径的 `QTWEBENGINE_DISABLE_GPU`、`QT_WEBENGINE_RENDERER` 和 `QT_QUICK_BACKEND`。外壳保留 Qt 按平台选择的 GL 实现，因为部分 Qt WebEngine 构建不接受显式 ANGLE/SwiftShader 实现参数。可以通过 `QTWEBENGINE_CHROMIUM_FLAGS` 覆盖部署环境的图形参数；外壳会保留已有值，只有在缺少 `--enable-webgl` 时才追加所需 WebGL 参数。
+
 启动诊断信息通过标准错误输出，并使用 `[deepseek-harness-qt]` 前缀。
 
 经过验证的 macOS arm64 构建产物为 `qt-shell/build/deepseek-harness-qt.app`。

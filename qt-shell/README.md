@@ -52,6 +52,52 @@ PNPM_EXECUTABLE=/path/to/pnpm \
 
 After starting `dsh web`, the shell polls `127.0.0.1:3080` for HTTP readiness and then waits for the frontend plugin graph to settle. If Qt WebEngine first observes `Loading plugins…`, the shell retries automatically.
 
+After selecting a Live2D model, the Web client offers `Desktop pet`. This opens a second WebEngine view in a frameless, always-on-top 360x480 window while leaving the main workspace window open and unchanged. Drag with the left mouse button to reposition it and double-click to close the pet window. The selected model is shared through same-origin IndexedDB, so it does not need to be selected again.
+
+The shell enables WebGL2 for both WebEngine views with Chromium's SwiftShader fallback when the host GPU is unavailable. It clears `QTWEBENGINE_DISABLE_GPU`, `QT_WEBENGINE_RENDERER`, and `QT_QUICK_BACKEND`, which would disable or replace the WebGL-capable graphics path before Chromium starts. It leaves Qt's platform-selected GL implementation unchanged because some Qt WebEngine builds reject explicit ANGLE/SwiftShader implementation flags. Override `QTWEBENGINE_CHROMIUM_FLAGS` to provide deployment-specific graphics flags; the shell preserves an existing value and only adds the required WebGL flags when `--enable-webgl` is absent.
+
 Startup diagnostics use the `[deepseek-harness-qt]` prefix on standard error.
 
 The validated macOS arm64 build artifact is `qt-shell/build/deepseek-harness-qt.app`.
+
+## Build the Qt 6 desktop shell on Ubuntu
+
+Install Qt 6, Qt WebEngine, CMake, and the build tools:
+
+```bash
+sudo apt update
+sudo apt install qt6-base-dev qt6-webengine-dev qt6-webengine-dev-tools \
+  cmake build-essential
+```
+
+Build Harness and the Qt desktop shell:
+
+```bash
+cd /home/chacha/repo/deepseek-harness
+corepack enable
+corepack prepare pnpm@11.7.0 --activate
+corepack pnpm install --frozen-lockfile
+corepack pnpm build
+cmake -S qt-shell -B qt-shell/build
+cmake --build qt-shell/build --parallel
+```
+
+Linux produces a regular executable. Start it with:
+
+```bash
+DSH_ROOT="$PWD" \
+PNPM_EXECUTABLE="$(command -v corepack)" \
+./qt-shell/build/deepseek-harness-qt
+```
+
+If startup fails, check the graphics driver and OpenGL version. Software rendering is also available:
+
+```bash
+export QTWEBENGINE_DISABLE_GPU=1
+export QT_QUICK_BACKEND=software
+export QT_WEBENGINE_RENDERER=software
+
+DSH_ROOT="$PWD" \
+PNPM_EXECUTABLE="$(command -v corepack)" \
+./qt-shell/build/deepseek-harness-qt
+```

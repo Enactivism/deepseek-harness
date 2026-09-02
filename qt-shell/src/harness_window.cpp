@@ -27,6 +27,17 @@
 #include <QFileDialog>
 #include <QDebug>
 #include <QWebEnginePage>
+#include <QWebEngineProfile>
+#include <QWebEngineScript>
+#include <QWebEngineScriptCollection>
+#include <QWebEngineSettings>
+#include <QMouseEvent>
+#include <QPalette>
+#include <QScreen>
+#include <QGuiApplication>
+#include <QWindow>
+#include <QTcpSocket>
+#include <QHostAddress>
 
 namespace {
 constexpr auto kHarnessUrl = "http://127.0.0.1:3080";
@@ -41,10 +52,70 @@ constexpr int kPageBootInspectionDelayMs = 1200;
 constexpr int kPageRetryDelayMs = 2000;
 constexpr int kMaxPageRetries = 3;
 
+constexpr auto kPetPageScript = R"JS(
+(() => {
+  const applyPetSurface = () => {
+    const body = document.body;
+    if (!body) return;
+    document.documentElement.style.setProperty('background', 'transparent', 'important');
+    body.style.setProperty('background', 'transparent', 'important');
+    body.style.setProperty('background-color', 'transparent', 'important');
+    body.style.setProperty('overflow', 'hidden', 'important');
+    const companion = body.querySelector('[data-live2d-companion="true"]');
+    if (!companion) return;
+    const keep = new Set([companion]);
+    for (let node = companion.parentElement; node && node !== body; node = node.parentElement) {
+      keep.add(node);
+    }
+    for (const child of body.querySelectorAll('*')) {
+      if (!keep.has(child) && !companion.contains(child)) {
+        child.style.setProperty('display', 'none', 'important');
+        child.style.setProperty('visibility', 'hidden', 'important');
+      }
+    }
+    for (let current = companion; current && current !== body; current = current.parentElement) {
+      current.style.setProperty('display', 'flex', 'important');
+      current.style.setProperty('visibility', 'visible', 'important');
+      current.style.setProperty('position', 'fixed', 'important');
+      current.style.setProperty('inset', '0', 'important');
+      current.style.setProperty('width', '100vw', 'important');
+      current.style.setProperty('height', '100vh', 'important');
+      current.style.setProperty('background', 'transparent', 'important');
+      current.style.setProperty('background-color', 'transparent', 'important');
+      current.style.setProperty('box-shadow', 'none', 'important');
+      current.style.setProperty('border', '0', 'important');
+    }
+  };
+  if (!window.__dshDesktopPetObserver) {
+    const observer = new MutationObserver(applyPetSurface);
+    observer.observe(document, { childList: true, subtree: true });
+    window.__dshDesktopPetObserver = observer;
+  }
+  applyPetSurface();
+})();
+)JS";
+
 class HarnessWebPage final : public QWebEnginePage {
+    Q_OBJECT
 public:
     explicit HarnessWebPage(QObject *parent = nullptr)
         : QWebEnginePage(parent) {}
+
+protected:
+    bool acceptNavigationRequest(const QUrl &url, NavigationType type, bool is_main_frame) override {
+        Q_UNUSED(type);
+        Q_UNUSED(is_main_frame);
+        if (url.scheme() == QStringLiteral("dsh")
+            && url.host() == QStringLiteral("desktop-pet")
+            && url.path() == QStringLiteral("/toggle")) {
+            emit desktopPetRequested();
+            return false;
+        }
+        return QWebEnginePage::acceptNavigationRequest(url, type, is_main_frame);
+    }
+
+signals:
+    void desktopPetRequested();
 
 protected:
     QStringList chooseFiles(FileSelectionMode mode,
@@ -212,8 +283,68 @@ HarnessWindow::HarnessWindow(QWidget *parent)
 
     web_view_->setObjectName("harnessWebView");
     web_view_->setStyleSheet("border: none; background: #10151e;");
-    web_view_->setPage(new HarnessWebPage(web_view_));
+    web_view_->settings()->setAttribute(QWebEngineSettings::WebGLEnabled, true);
+    web_view_->settings()->setAttribute(QWebEngineSettings::Accelerated2dCanvasEnabled, true);
+    auto *web_page = new HarnessWebPage(web_view_);
+    web_page->profile()->setHttpUserAgent(
+        web_page->profile()->httpUserAgent() + QStringLiteral(" DeepSeekHarnessQt/1"));
+    web_view_->setPage(web_page);
+    web_view_->installEventFilter(this);
+    connect(web_page, &HarnessWebPage::desktopPetRequested,
+            this, &HarnessWindow::toggleDesktopPet);
     content_stack_->addWidget(web_view_);
+
+    pet_window_ = new QWidget(nullptr, Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
+    pet_window_->setWindowTitle(QStringLiteral("Live2D 桌宠"));
+    pet_window_->setMinimumSize(240, 320);
+    pet_window_->resize(360, 480);
+    pet_window_->setAttribute(Qt::WA_TranslucentBackground, true);
+    pet_window_->setAttribute(Qt::WA_NoSystemBackground, true);
+    pet_window_->setAutoFillBackground(false);
+    {
+        auto palette = pet_window_->palette();
+        palette.setColor(QPalette::Window, Qt::transparent);
+        pet_window_->setPalette(palette);
+    }
+    pet_window_->setStyleSheet("background: transparent;");
+    pet_window_->setMouseTracking(true);
+    auto *pet_layout = new QVBoxLayout(pet_window_);
+    pet_layout->setContentsMargins(0, 0, 0, 0);
+    pet_web_view_ = new QWebEngineView(pet_window_);
+    pet_web_view_->setAttribute(Qt::WA_TranslucentBackground, true);
+    pet_web_view_->setAttribute(Qt::WA_NoSystemBackground, true);
+    pet_web_view_->setAttribute(Qt::WA_OpaquePaintEvent, false);
+    pet_web_view_->setAttribute(Qt::WA_AlwaysStackOnTop, true);
+    pet_web_view_->setAutoFillBackground(false);
+    {
+        auto palette = pet_web_view_->palette();
+        palette.setColor(QPalette::Window, Qt::transparent);
+        pet_web_view_->setPalette(palette);
+    }
+    pet_web_view_->setMouseTracking(true);
+    pet_web_view_->setStyleSheet("border: none; background: transparent;");
+    pet_web_view_->settings()->setAttribute(QWebEngineSettings::WebGLEnabled, true);
+    pet_web_view_->settings()->setAttribute(QWebEngineSettings::Accelerated2dCanvasEnabled, true);
+    auto *pet_page = new HarnessWebPage(pet_web_view_);
+    pet_page->profile()->setHttpUserAgent(
+        pet_page->profile()->httpUserAgent() + QStringLiteral(" DeepSeekHarnessQt/1"));
+    QWebEngineScript pet_script;
+    pet_script.setName(QStringLiteral("dsh-desktop-pet-surface"));
+    pet_script.setInjectionPoint(QWebEngineScript::DocumentCreation);
+    pet_script.setWorldId(QWebEngineScript::MainWorld);
+    pet_script.setSourceCode(QString::fromUtf8(kPetPageScript));
+    pet_page->scripts().insert(pet_script);
+    pet_web_view_->setPage(pet_page);
+    pet_page->setBackgroundColor(Qt::transparent);
+    pet_web_view_->installEventFilter(this);
+    pet_window_->installEventFilter(this);
+    qApp->installEventFilter(this);
+    connect(pet_page, &HarnessWebPage::desktopPetRequested,
+            this, &HarnessWindow::toggleDesktopPet);
+    connect(pet_web_view_, &QWebEngineView::loadFinished,
+            this, &HarnessWindow::preparePetPage);
+    pet_layout->addWidget(pet_web_view_);
+    pet_window_->hide();
 
     state_view_->setObjectName("stateView");
     auto *state_outer_layout = new QVBoxLayout(state_view_);
@@ -317,6 +448,10 @@ HarnessWindow::HarnessWindow(QWidget *parent)
         qInfo() << "[deepseek-harness-qt] WebEngine page load finished:" << ok
                 << web_view_->url();
         if (!ok) {
+            if (page_ready_) {
+                qInfo() << "[deepseek-harness-qt] Ignoring a late subresource load failure after the page became ready";
+                return;
+            }
             if (page_retry_attempts_ >= kMaxPageRetries) {
                 showErrorState("网页加载失败", "请检查本地 Harness 服务状态，然后重新连接。" );
                 return;
@@ -348,6 +483,7 @@ HarnessWindow::HarnessWindow(QWidget *parent)
                         || body.contains("did not activate")
                         || body.contains("pending (waiting for service");
                     if (!boot_not_ready) {
+                        page_ready_ = true;
                         qInfo() << "[deepseek-harness-qt] WebEngine boot page ready; body length:"
                                 << body.size();
                         qInfo().noquote() << "[deepseek-harness-qt] WebEngine body text:"
@@ -379,14 +515,20 @@ HarnessWindow::HarnessWindow(QWidget *parent)
     startHarness();
 }
 
-HarnessWindow::~HarnessWindow() { stopHarness(); }
+HarnessWindow::~HarnessWindow() {
+    qApp->removeEventFilter(this);
+    stopHarness();
+    delete pet_window_;
+}
 
 void HarnessWindow::startHarness() {
     stopping_ = false;
     page_loaded_ = false;
+    page_ready_ = false;
     page_retry_attempts_ = 0;
     readiness_attempts_ = 0;
     probe_in_flight_ = false;
+    owns_server_ = false;
 
     auto root = qEnvironmentVariable("DSH_ROOT");
     if (root.isEmpty()) root = QStringLiteral(DSH_DEFAULT_ROOT);
@@ -419,6 +561,15 @@ void HarnessWindow::startHarness() {
     environment.insert("DSH_ROOT", root);
     server_->setProcessEnvironment(environment);
 
+    QTcpSocket existing_server;
+    existing_server.connectToHost(QHostAddress::LocalHost, 3080);
+    if (existing_server.waitForConnected(200)) {
+        qInfo() << "[deepseek-harness-qt] Reusing existing Harness service on 127.0.0.1:3080";
+        showHarnessReady();
+        existing_server.disconnectFromHost();
+        return;
+    }
+
     QStringList arguments;
     const auto executableName = QFileInfo(pnpm).fileName();
     if (executableName == "corepack" || executableName == "corepack.exe") arguments << "pnpm";
@@ -426,6 +577,7 @@ void HarnessWindow::startHarness() {
 
     qInfo() << "[deepseek-harness-qt] Starting Harness from" << server_->workingDirectory()
             << "using" << pnpm << "arguments" << arguments;
+    owns_server_ = true;
     server_->start(pnpm, arguments);
 }
 
@@ -433,7 +585,7 @@ void HarnessWindow::stopHarness() {
     stopping_ = true;
     readiness_timer_->stop();
     for (auto *reply : network_manager_->findChildren<QNetworkReply *>()) reply->abort();
-    if (server_->state() == QProcess::NotRunning) return;
+    if (!owns_server_ || server_->state() == QProcess::NotRunning) return;
     server_->terminate();
     if (!server_->waitForFinished(1500)) server_->kill();
 }
@@ -462,6 +614,7 @@ void HarnessWindow::probeHarness() {
 void HarnessWindow::showHarnessReady() {
     if (page_loaded_ || stopping_) return;
     page_loaded_ = true;
+    page_ready_ = false;
     readiness_timer_->stop();
     showLoadingState("正在载入工作区", "本地服务已就绪，正在加载 Harness 网页插件…");
     updateStatus("Web 服务已就绪，等待前端插件稳定…");
@@ -470,8 +623,91 @@ void HarnessWindow::showHarnessReady() {
     });
 }
 
+void HarnessWindow::toggleDesktopPet() {
+    setDesktopPet(!desktop_pet_);
+}
+
+void HarnessWindow::setDesktopPet(bool enabled) {
+    if (desktop_pet_ == enabled) return;
+    desktop_pet_ = enabled;
+    if (enabled) {
+        pet_window_->resize(360, 480);
+        pet_window_->move(QGuiApplication::primaryScreen()->availableGeometry().bottomRight()
+                          - QPoint(pet_window_->width() + 24, pet_window_->height() + 24));
+        pet_web_view_->setUrl(QUrl(QStringLiteral("%1/?dshDesktopPet=1").arg(kHarnessUrl)));
+        pet_window_->show();
+        pet_window_->raise();
+    } else {
+        dragging_ = false;
+        pet_window_->hide();
+        pet_web_view_->stop();
+    }
+}
+
+void HarnessWindow::preparePetPage(bool ok) {
+    if (!desktop_pet_ || !ok) return;
+    // QWebEngineView creates its native render widget lazily. Configure the
+    // child after navigation as well as the view itself, otherwise that child
+    // can paint an opaque rectangle over the translucent top-level window.
+    for (auto *child : pet_web_view_->findChildren<QWidget *>()) {
+        child->setAttribute(Qt::WA_TranslucentBackground, true);
+        child->setAttribute(Qt::WA_NoSystemBackground, true);
+        child->setAttribute(Qt::WA_OpaquePaintEvent, false);
+        child->setAutoFillBackground(false);
+        auto palette = child->palette();
+        palette.setColor(QPalette::Window, Qt::transparent);
+        child->setPalette(palette);
+    }
+    pet_web_view_->page()->runJavaScript(QString::fromUtf8(kPetPageScript));
+}
+
+bool HarnessWindow::eventFilter(QObject *watched, QEvent *event) {
+    const auto *widget = qobject_cast<const QWidget *>(watched);
+    QPoint global_position;
+    if (const auto *mouse = dynamic_cast<const QMouseEvent *>(event)) {
+        global_position = mouse->globalPosition().toPoint();
+    }
+    const bool inside_pet_window = pet_window_ != nullptr
+        && pet_window_->frameGeometry().contains(global_position);
+    const bool is_pet_target = desktop_pet_
+        && (watched == pet_window_
+            || watched == pet_web_view_
+            || (widget != nullptr && pet_window_ != nullptr && pet_window_->isAncestorOf(widget))
+            || inside_pet_window);
+    if (is_pet_target || (desktop_pet_ && dragging_)) {
+        if (event->type() == QEvent::MouseButtonDblClick) {
+            const auto *mouse = static_cast<QMouseEvent *>(event);
+            if (is_pet_target && mouse->button() == Qt::LeftButton) {
+                setDesktopPet(false);
+                return true;
+            }
+        } else if (event->type() == QEvent::MouseButtonPress) {
+            const auto *mouse = static_cast<QMouseEvent *>(event);
+            if (is_pet_target && mouse->button() == Qt::LeftButton) {
+                if (auto *window = pet_window_->windowHandle();
+                    window != nullptr && window->startSystemMove()) {
+                    dragging_ = false;
+                    return true;
+                }
+                dragging_ = true;
+                drag_offset_ = mouse->globalPosition().toPoint() - pet_window_->frameGeometry().topLeft();
+                return true;
+            }
+        } else if (event->type() == QEvent::MouseMove && dragging_) {
+            const auto *mouse = static_cast<QMouseEvent *>(event);
+            pet_window_->move(mouse->globalPosition().toPoint() - drag_offset_);
+            return true;
+        } else if (event->type() == QEvent::MouseButtonRelease && dragging_) {
+            dragging_ = false;
+            return true;
+        }
+    }
+    return QMainWindow::eventFilter(watched, event);
+}
+
 void HarnessWindow::showServerError(const QString &message) {
     page_loaded_ = false;
+    page_ready_ = false;
     readiness_timer_->stop();
     showErrorState("无法连接到 Harness", message + "\n请确认 Node.js 与 pnpm 已安装，然后重试。" );
     updateStatus("无法启动 Harness：" + message + "。请确认 Node.js 与 pnpm 已安装。");
@@ -506,6 +742,7 @@ void HarnessWindow::retryHarness() {
     if (stopping_) return;
 
     page_loaded_ = false;
+    page_ready_ = false;
     page_retry_attempts_ = 0;
     readiness_attempts_ = 0;
     probe_in_flight_ = false;
@@ -527,6 +764,7 @@ void HarnessWindow::reloadWebView() {
     }
 
     page_retry_attempts_ = 0;
+    page_ready_ = false;
     showLoadingState("正在刷新工作区", "重新加载网页插件和会话状态…");
     updateStatus("正在重新加载 Harness…");
     web_view_->reload();
@@ -537,6 +775,9 @@ void HarnessWindow::updateStatus(const QString &message) {
 }
 
 void HarnessWindow::closeEvent(QCloseEvent *event) {
+    if (pet_window_ != nullptr) pet_window_->hide();
     stopHarness();
     event->accept();
 }
+
+#include "harness_window.moc"

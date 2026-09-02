@@ -19,6 +19,8 @@ export const zh = {
   'action.show': '显示 Live2D 陪伴',
   'action.openControls': '调整外观',
   'action.closeControls': '收起调整',
+  'action.desktopPet': '桌宠模式',
+  'action.exitDesktopPet': '退出桌宠',
   'controls.title': '外观调整',
   'controls.scale': '模型大小',
   'controls.opacity': '透明度',
@@ -30,6 +32,7 @@ export const zh = {
   'error.missingData': '没有找到 .moc3 或 .moc 模型数据文件。',
   'error.invalidModel': '模型入口文件不是有效的 JSON。',
   'error.runtime': 'Live2D 运行时初始化失败，请检查模型文件是否完整。',
+  'error.storage': '模型保存失败，请稍后重试。',
 } satisfies Record<string, string>
 
 /** Live2D dictionary key union. */
@@ -54,6 +57,8 @@ export const en = {
   'action.show': 'Show Live2D companion',
   'action.openControls': 'Adjust appearance',
   'action.closeControls': 'Hide adjustments',
+  'action.desktopPet': 'Desktop pet',
+  'action.exitDesktopPet': 'Exit desktop pet',
   'controls.title': 'Appearance',
   'controls.scale': 'Model size',
   'controls.opacity': 'Opacity',
@@ -65,6 +70,7 @@ export const en = {
   'error.missingData': 'No .moc3 or .moc model data file was found.',
   'error.invalidModel': 'The model entry is not valid JSON.',
   'error.runtime': 'Live2D runtime initialization failed. Check that the model is complete.',
+  'error.storage': 'The model could not be saved. Try again.',
 } satisfies Record<Live2DKey, string>
 
 /** Namespace used by the slot's locale seat. */

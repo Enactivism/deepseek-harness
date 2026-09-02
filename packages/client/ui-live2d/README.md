@@ -10,6 +10,8 @@ After loading, the companion shows the current model name and file count, follow
 
 The component is deliberately browser-only. Qt remains a WebEngine/process shell and does not need a Live2D SDK or a second rendering path. This keeps local model ownership and the UI seam in the same place as the rest of the Web plugin system.
 
+When the page runs in the Qt shell, a loaded model also exposes `Desktop pet`. The shell moves the existing WebEngine view into a frameless, always-on-top 360x480 window, keeps the current model mounted, and hides the rest of the Web UI in that window. Drag with the left mouse button to move it; double-click to return to the workspace. Browser sessions do not expose this action.
+
 ## Development
 
 ```sh
