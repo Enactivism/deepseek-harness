@@ -97,3 +97,17 @@
 - button "0% of context used"
 - button "Send message" [disabled]
 - text: 3 turns · 7 steps LLM {{duration}} · Tool call {{duration}} Cache hit 77% Input 66.5K tok · Output 318 tok
+- complementary:
+  - region "Live2D companion":
+    - paragraph: Live2D companion
+    - paragraph: Coding with you
+    - status: Waiting for a model
+    - button "Hide Live2D companion":
+      - img
+    - paragraph: Upload your model
+    - paragraph: Choose a folder containing .model3.json or .model.json
+    - paragraph: The model stays in this page and is never uploaded
+    - button "Upload model folder":
+      - img
+      - text: Upload model folder
+    - button "Upload model folder"

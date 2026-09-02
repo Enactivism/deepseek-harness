@@ -43,8 +43,10 @@ const MODE = webSnapshotMode()
 /** Narrow sweep stop where the mutation control retains overflow across scrollbar implementations. */
 const CONTROL_VIEWPORT = 600
 /**
- * Viewport widths bracketing the glow: the narrow stops retain the reported
- * bleed while the widest stop proves the relation can also be false.
+ * Viewport widths bracketing the glow after the center workbench reserves its
+ * right workspace. The widest stop remains useful because it records the
+ * current composition's changed threshold instead of assuming the old shell
+ * had the same conversation width.
  */
 const WIDTHS = [1680, 1200, 1000, 800, CONTROL_VIEWPORT]
 /** Element id of the mutation control's injected sheet, so the test can take it back out. */
@@ -263,10 +265,11 @@ describe('web e2e: the conversation column scrolls on one axis', () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-conversation-column-overflow'))
     const stops = await sweep()
     // The vacuity guard, in two halves: the glow has to reach past the column
-    // at the narrow stops, and that reach has to still register as scrollable
-    // overflow. Without both, the claim below holds for free.
+    // at the stops where the current workbench makes it bleed, and that reach
+    // has to still register as scrollable overflow. Without both, the claim
+    // below holds for free.
     expect(stops.filter(stop => stop.glowBleeds).map(stop => stop.width)).toEqual([
-      1200, 1000, 800, CONTROL_VIEWPORT,
+      1680, 1200, 1000, 800, CONTROL_VIEWPORT,
     ])
     for (const stop of stops.filter(stop => stop.glowBleeds)) {
       expect(stop.bleedRange, `viewport ${String(stop.width)}`).toBeGreaterThan(0)

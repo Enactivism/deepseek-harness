@@ -75,6 +75,9 @@ const OVERRIDES: Record<string, { license?: string; repo?: string }> = {
   '@modelcontextprotocol/server-filesystem': { license: 'MIT / Apache-2.0', repo: 'https://github.com/modelcontextprotocol/servers' },
   // No repository field in the published manifest.
   'node-addon-require-builtin': { repo: 'https://www.npmjs.com/package/node-addon-require-builtin' },
+  // The l2d package publishes its runtime metadata without a repository field;
+  // its upstream source and model-loading documentation live in this repo.
+  'l2d': { repo: 'https://github.com/hacxy/l2d' },
 }
 
 /**

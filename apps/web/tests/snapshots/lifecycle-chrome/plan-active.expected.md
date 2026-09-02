@@ -38,6 +38,20 @@
   - text: DeepSeek-V4-Flash
   - img
 - button "Send message" [disabled]
+- complementary:
+  - region "Live2D companion":
+    - paragraph: Live2D companion
+    - paragraph: Coding with you
+    - status: Waiting for a model
+    - button "Hide Live2D companion":
+      - img
+    - paragraph: Upload your model
+    - paragraph: Choose a folder containing .model3.json or .model.json
+    - paragraph: The model stays in this page and is never uploaded
+    - button "Upload model folder":
+      - img
+      - text: Upload model folder
+    - button "Upload model folder"
 - text: Details
 - button "Close details"
 - text: Click a tool row in the message flow to view its details
