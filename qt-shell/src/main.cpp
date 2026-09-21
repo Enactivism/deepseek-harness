@@ -1,9 +1,20 @@
 #include "harness_window.h"
+#include "desktop_pet_interaction.h"
 
 #include <QApplication>
 #include <QByteArray>
 
 namespace {
+void configureWindowSystem() {
+#if defined(Q_OS_LINUX)
+    if (desktop_pet::shouldPreferXcbPlatform(qgetenv("QT_QPA_PLATFORM"),
+                                             qgetenv("WAYLAND_DISPLAY"),
+                                             qgetenv("DISPLAY"))) {
+        qputenv("QT_QPA_PLATFORM", "xcb;wayland");
+    }
+#endif
+}
+
 void configureWebEngineGraphics() {
     // These deployment variables disable Chromium's WebGL context entirely;
     // the shell uses Chromium's SwiftShader path instead.
@@ -30,6 +41,7 @@ void configureWebEngineGraphics() {
 }
 
 int main(int argc, char *argv[]) {
+    configureWindowSystem();
     configureWebEngineGraphics();
     QApplication app(argc, argv);
     QApplication::setApplicationName("DeepSeek Harness");

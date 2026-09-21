@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QMainWindow>
+#include <QPoint>
 
 class QLabel;
 class QNetworkAccessManager;
@@ -38,10 +39,12 @@ private:
     void toggleDesktopPet();
     void setDesktopPet(bool enabled);
     void preparePetPage(bool ok);
+    void updateDesktopPetPointer();
 
     QProcess *server_;
     QNetworkAccessManager *network_manager_;
     QTimer *readiness_timer_;
+    QTimer *pet_pointer_timer_;
     QWebEngineView *web_view_;
     QWidget *pet_window_ = nullptr;
     QWebEngineView *pet_web_view_ = nullptr;
@@ -63,4 +66,7 @@ private:
     bool desktop_pet_ = false;
     QPoint drag_offset_{};
     bool dragging_ = false;
+    int resize_wheel_remainder_ = 0;
+    QPoint last_pet_pointer_{};
+    bool last_pet_pointer_valid_ = false;
 };

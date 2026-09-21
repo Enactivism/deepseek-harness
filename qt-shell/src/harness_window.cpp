@@ -1,8 +1,10 @@
 #include "harness_window.h"
+#include "desktop_pet_interaction.h"
 
 #include <QCloseEvent>
 #include <QColor>
 #include <QCoreApplication>
+#include <QCursor>
 #include <QDir>
 #include <QFrame>
 #include <QGraphicsDropShadowEffect>
@@ -35,6 +37,8 @@
 #include <QPalette>
 #include <QScreen>
 #include <QGuiApplication>
+#include <QSize>
+#include <QWheelEvent>
 #include <QWindow>
 #include <QTcpSocket>
 #include <QHostAddress>
@@ -51,6 +55,8 @@ constexpr int kInitialPageDelayMs = 3000;
 constexpr int kPageBootInspectionDelayMs = 1200;
 constexpr int kPageRetryDelayMs = 2000;
 constexpr int kMaxPageRetries = 3;
+constexpr int kPetPointerPollIntervalMs = 16;
+const QSize kPetResizeStep(24, 32);
 
 constexpr auto kPetPageScript = R"JS(
 (() => {
@@ -172,6 +178,7 @@ HarnessWindow::HarnessWindow(QWidget *parent)
       server_(new QProcess(this)),
       network_manager_(new QNetworkAccessManager(this)),
       readiness_timer_(new QTimer(this)),
+      pet_pointer_timer_(new QTimer(this)),
       web_view_(new QWebEngineView(this)),
       state_view_(new QWidget(this)),
       state_icon_(new QLabel("DH", state_view_)),
@@ -343,6 +350,10 @@ HarnessWindow::HarnessWindow(QWidget *parent)
             this, &HarnessWindow::toggleDesktopPet);
     connect(pet_web_view_, &QWebEngineView::loadFinished,
             this, &HarnessWindow::preparePetPage);
+    pet_pointer_timer_->setInterval(kPetPointerPollIntervalMs);
+    pet_pointer_timer_->setTimerType(Qt::PreciseTimer);
+    connect(pet_pointer_timer_, &QTimer::timeout,
+            this, &HarnessWindow::updateDesktopPetPointer);
     pet_layout->addWidget(pet_web_view_);
     pet_window_->hide();
 
@@ -630,6 +641,7 @@ void HarnessWindow::toggleDesktopPet() {
 void HarnessWindow::setDesktopPet(bool enabled) {
     if (desktop_pet_ == enabled) return;
     desktop_pet_ = enabled;
+    resize_wheel_remainder_ = 0;
     if (enabled) {
         pet_window_->resize(360, 480);
         pet_window_->move(QGuiApplication::primaryScreen()->availableGeometry().bottomRight()
@@ -637,8 +649,13 @@ void HarnessWindow::setDesktopPet(bool enabled) {
         pet_web_view_->setUrl(QUrl(QStringLiteral("%1/?dshDesktopPet=1").arg(kHarnessUrl)));
         pet_window_->show();
         pet_window_->raise();
+        last_pet_pointer_valid_ = false;
+        if (desktop_pet::supportsGlobalPointerTracking(QGuiApplication::platformName())) {
+            pet_pointer_timer_->start();
+        }
     } else {
         dragging_ = false;
+        pet_pointer_timer_->stop();
         pet_window_->hide();
         pet_web_view_->stop();
     }
@@ -654,26 +671,59 @@ void HarnessWindow::preparePetPage(bool ok) {
         child->setAttribute(Qt::WA_NoSystemBackground, true);
         child->setAttribute(Qt::WA_OpaquePaintEvent, false);
         child->setAutoFillBackground(false);
+        child->setMouseTracking(true);
         auto palette = child->palette();
         palette.setColor(QPalette::Window, Qt::transparent);
         child->setPalette(palette);
     }
     pet_web_view_->page()->runJavaScript(QString::fromUtf8(kPetPageScript));
+    last_pet_pointer_valid_ = false;
+    updateDesktopPetPointer();
+}
+
+void HarnessWindow::updateDesktopPetPointer() {
+    if (!desktop_pet_
+        || !pet_window_->isVisible()
+        || !desktop_pet::supportsGlobalPointerTracking(QGuiApplication::platformName())) return;
+    const QPoint client_position = pet_web_view_->mapFromGlobal(QCursor::pos());
+    if (last_pet_pointer_valid_ && client_position == last_pet_pointer_) return;
+    last_pet_pointer_ = client_position;
+    last_pet_pointer_valid_ = true;
+    pet_web_view_->page()->runJavaScript(
+        desktop_pet::pointerMoveScript(client_position), QWebEngineScript::MainWorld);
 }
 
 bool HarnessWindow::eventFilter(QObject *watched, QEvent *event) {
     const auto *widget = qobject_cast<const QWidget *>(watched);
     QPoint global_position;
-    if (const auto *mouse = dynamic_cast<const QMouseEvent *>(event)) {
-        global_position = mouse->globalPosition().toPoint();
+    const auto *mouse_event = dynamic_cast<const QMouseEvent *>(event);
+    if (mouse_event != nullptr) {
+        global_position = mouse_event->globalPosition().toPoint();
     }
-    const bool inside_pet_window = pet_window_ != nullptr
+    const bool inside_pet_window = mouse_event != nullptr && pet_window_ != nullptr
         && pet_window_->frameGeometry().contains(global_position);
     const bool is_pet_target = desktop_pet_
         && (watched == pet_window_
             || watched == pet_web_view_
             || (widget != nullptr && pet_window_ != nullptr && pet_window_->isAncestorOf(widget))
             || inside_pet_window);
+    if (event->type() == QEvent::Wheel && is_pet_target) {
+        auto *wheel = static_cast<QWheelEvent *>(event);
+        const int angle_delta = wheel->angleDelta().y();
+        if (angle_delta != 0) {
+            const int steps = desktop_pet::consumeWheelSteps(
+                angle_delta, resize_wheel_remainder_);
+            if (steps != 0) {
+                pet_window_->setGeometry(desktop_pet::wheelResizedGeometry(
+                    pet_window_->geometry(),
+                    steps,
+                    kPetResizeStep,
+                    pet_window_->minimumSize()));
+            }
+            wheel->accept();
+            return true;
+        }
+    }
     if (is_pet_target || (desktop_pet_ && dragging_)) {
         if (event->type() == QEvent::MouseButtonDblClick) {
             const auto *mouse = static_cast<QMouseEvent *>(event);

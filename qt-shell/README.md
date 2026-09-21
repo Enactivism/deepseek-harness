@@ -26,6 +26,7 @@ pnpm build
 cmake -S qt-shell -B qt-shell/build \
   -DCMAKE_PREFIX_PATH=/opt/homebrew/opt/qt
 cmake --build qt-shell/build
+ctest --test-dir qt-shell/build --output-on-failure
 ```
 
 If the system has no standalone `pnpm`, replace the two pnpm commands with `corepack pnpm install` and `corepack pnpm build`. If `~/.npmrc` contains an unavailable proxy, bypass the user configuration for this installation only:
@@ -52,7 +53,9 @@ PNPM_EXECUTABLE=/path/to/pnpm \
 
 After starting `dsh web`, the shell polls `127.0.0.1:3080` for HTTP readiness and then waits for the frontend plugin graph to settle. If Qt WebEngine first observes `Loading plugins…`, the shell retries automatically.
 
-After selecting a Live2D model, the Web client offers `Desktop pet`. This opens a second WebEngine view in a frameless, always-on-top 360x480 window while leaving the main workspace window open and unchanged. Drag with the left mouse button to reposition it and double-click to close the pet window. The selected model is shared through same-origin IndexedDB, so it does not need to be selected again.
+After selecting a Live2D model, the Web client offers `Desktop pet`. This opens a second WebEngine view in a frameless, always-on-top 360x480 window while leaving the main workspace window open and unchanged. Move the pointer anywhere on the desktop to direct the model's gaze, drag the window with the left mouse button to reposition it, scroll up over the pet to enlarge it or down to shrink it to 240x320, and double-click to close it. The selected model is shared through same-origin IndexedDB, so it does not need to be selected again.
+
+On a Linux Wayland session with XWayland available through `DISPLAY`, the shell selects Qt's `xcb` backend so the desktop pet can read global pointer coordinates and retain explicit window placement. An explicit `QT_QPA_PLATFORM` value takes precedence. A pure Wayland session keeps native Wayland behavior: wheel resizing works, but the model can follow the pointer only while it is over a surface owned by the application because the protocol does not expose desktop-global coordinates to clients.
 
 The shell enables WebGL2 for both WebEngine views with Chromium's SwiftShader fallback when the host GPU is unavailable. It clears `QTWEBENGINE_DISABLE_GPU`, `QT_WEBENGINE_RENDERER`, and `QT_QUICK_BACKEND`, which would disable or replace the WebGL-capable graphics path before Chromium starts. It leaves Qt's platform-selected GL implementation unchanged because some Qt WebEngine builds reject explicit ANGLE/SwiftShader implementation flags. Override `QTWEBENGINE_CHROMIUM_FLAGS` to provide deployment-specific graphics flags; the shell preserves an existing value and only adds the required WebGL flags when `--enable-webgl` is absent.
 
