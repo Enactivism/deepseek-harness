@@ -1,6 +1,7 @@
 #include "desktop_pet_interaction.h"
 
 #include <algorithm>
+
 #include <Qt>
 
 namespace desktop_pet {
@@ -47,6 +48,13 @@ bool isChatInteractionArea(const QPoint &position,
     if (chat_open) return true;
     return position.x() >= window_size.width() - closed_button_area
         && position.y() >= window_size.height() - closed_button_area;
+}
+
+QString desktopPetScaleScript(double scale) {
+    return QStringLiteral(
+        "window.dispatchEvent(new CustomEvent('dsh-desktop-pet-scale', {"
+        "detail: {scale: %1}}));")
+        .arg(QString::number(scale, 'f', 6));
 }
 
 QString pointerMoveScript(const QPoint &client_position) {

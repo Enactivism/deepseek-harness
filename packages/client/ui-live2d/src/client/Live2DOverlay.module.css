@@ -49,6 +49,11 @@
   display: none;
 }
 
+.root[data-desktop-pet='true'] .canvas {
+  flex: none;
+  transition: opacity 160ms ease;
+}
+
 .root::before {
   position: absolute;
   inset: 0 22% auto 22%;

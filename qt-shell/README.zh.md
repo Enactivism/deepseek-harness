@@ -53,11 +53,11 @@ PNPM_EXECUTABLE=/path/to/pnpm \
 
 启动 `dsh web` 后，外壳会轮询 `127.0.0.1:3080` 的 HTTP 就绪状态，再等待前端插件图稳定。如果 Qt WebEngine 首次读取到 `Loading plugins…`，外壳会自动重试。
 
-选择 Live2D 模型后，网页会提供“桌宠模式”。进入后，外壳创建第二个 WebEngine 视图并放入无边框、置顶的 360x480 小窗，同时保持主工作区窗口打开且不变。鼠标移动到桌面任意位置都能引导模型视线；按住鼠标左键拖动窗口可移动桌宠，在桌宠上向上滚动滚轮可放大，向下滚动可缩小，最小为 240x320；双击可关闭桌宠窗口。所选模型通过同源 IndexedDB 共享，因此不需要重新选择文件。
+选择 Live2D 模型后，网页会提供“桌宠模式”。进入后，外壳创建第二个 WebEngine 视图并放入无边框、置顶的 360x480 小窗，同时保持主工作区窗口打开且不变。鼠标移动到桌面任意位置都能引导模型视线；按住鼠标左键拖动窗口可移动桌宠，在桌宠上向上滚动滚轮会同步放大模型和窗口，向下滚动会同步缩小二者；每个完整滚轮步长都会保持模型与原生窗口的相同比例、保持底部中心锚点，窗口最小为 240x320。双击可关闭桌宠窗口。所选模型通过同源 IndexedDB 共享，因此不需要重新选择文件。
 
-桌宠窗口中的聊天按钮会打开一段由独立 Harness Session 承载的紧凑对话。其消息与模型上下文同主工作区聊天相互隔离，打开聊天也不会改变主窗口持久化的当前 Session。聊天展开期间，外壳会把点击和滚轮输入交给 WebEngine，用于操作控件和滚动消息；关闭聊天后，才能移动或缩放桌宠并使用双击退出。
+桌宠窗口中的聊天按钮会打开一段由独立 Harness Session 承载的紧凑对话。其消息与模型上下文同主工作区聊天相互隔离，打开聊天也不会改变主窗口持久化的当前 Session。聊天展开期间，外壳会把点击和滚轮输入交给 WebEngine，用于操作控件和滚动消息；关闭聊天后，才能移动或缩放模型并使用双击退出。
 
-Linux Wayland 会话通过 `DISPLAY` 提供 XWayland 时，外壳会选择 Qt 的 `xcb` 后端，使桌宠能读取全局鼠标坐标并保持显式窗口位置；显式设置的 `QT_QPA_PLATFORM` 优先。纯 Wayland 会话会保留原生 Wayland 行为：滚轮缩放仍可使用，但协议不会向客户端提供桌面全局坐标，因此模型只能在鼠标位于本应用持有的 surface 上时追踪鼠标。
+Linux Wayland 会话通过 `DISPLAY` 提供 XWayland 时，外壳会选择 Qt 的 `xcb` 后端，使桌宠能读取全局鼠标坐标并保持显式窗口位置；显式设置的 `QT_QPA_PLATFORM` 优先。纯 Wayland 会话会保留原生 Wayland 行为：滚轮模型缩放仍可使用，但协议不会向客户端提供桌面全局坐标，因此模型只能在鼠标位于本应用持有的 surface 上时追踪鼠标。
 
 当主机 GPU 不可用时，外壳为两个 WebEngine 视图启用 WebGL2，并允许 Chromium 使用 SwiftShader 回退。外壳会清除会在 Chromium 启动前禁用或替换 WebGL 图形路径的 `QTWEBENGINE_DISABLE_GPU`、`QT_WEBENGINE_RENDERER` 和 `QT_QUICK_BACKEND`。外壳保留 Qt 按平台选择的 GL 实现，因为部分 Qt WebEngine 构建不接受显式 ANGLE/SwiftShader 实现参数。可以通过 `QTWEBENGINE_CHROMIUM_FLAGS` 覆盖部署环境的图形参数；外壳会保留已有值，只有在缺少 `--enable-webgl` 时才追加所需 WebGL 参数。
 

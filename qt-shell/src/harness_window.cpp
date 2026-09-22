@@ -57,7 +57,9 @@ constexpr int kPageRetryDelayMs = 2000;
 constexpr int kMaxPageRetries = 3;
 constexpr int kPetPointerPollIntervalMs = 16;
 constexpr int kPetChatControlArea = 64;
+const QSize kPetBaseSize(360, 480);
 const QSize kPetResizeStep(24, 32);
+const QSize kPetMinimumSize(240, 320);
 
 constexpr auto kPetPageScript = R"JS(
 (() => {
@@ -314,8 +316,8 @@ HarnessWindow::HarnessWindow(QWidget *parent)
 
     pet_window_ = new QWidget(nullptr, Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
     pet_window_->setWindowTitle(QStringLiteral("Live2D 桌宠"));
-    pet_window_->setMinimumSize(240, 320);
-    pet_window_->resize(360, 480);
+    pet_window_->setMinimumSize(kPetMinimumSize);
+    pet_window_->resize(kPetBaseSize);
     pet_window_->setAttribute(Qt::WA_TranslucentBackground, true);
     pet_window_->setAttribute(Qt::WA_NoSystemBackground, true);
     pet_window_->setAutoFillBackground(false);
@@ -658,9 +660,9 @@ void HarnessWindow::setDesktopPet(bool enabled) {
     if (desktop_pet_ == enabled) return;
     desktop_pet_ = enabled;
     pet_chat_open_ = false;
-    resize_wheel_remainder_ = 0;
+    scale_wheel_remainder_ = 0;
     if (enabled) {
-        pet_window_->resize(360, 480);
+        pet_window_->resize(kPetBaseSize);
         pet_window_->move(QGuiApplication::primaryScreen()->availableGeometry().bottomRight()
                           - QPoint(pet_window_->width() + 24, pet_window_->height() + 24));
         pet_web_view_->setUrl(QUrl(QStringLiteral("%1/?dshDesktopPet=1").arg(kHarnessUrl)));
@@ -735,13 +737,14 @@ bool HarnessWindow::eventFilter(QObject *watched, QEvent *event) {
         const int angle_delta = wheel->angleDelta().y();
         if (angle_delta != 0) {
             const int steps = desktop_pet::consumeWheelSteps(
-                angle_delta, resize_wheel_remainder_);
+                angle_delta, scale_wheel_remainder_);
             if (steps != 0) {
                 pet_window_->setGeometry(desktop_pet::wheelResizedGeometry(
-                    pet_window_->geometry(),
-                    steps,
-                    kPetResizeStep,
-                    pet_window_->minimumSize()));
+                    pet_window_->geometry(), steps, kPetResizeStep, kPetMinimumSize));
+                const double scale = static_cast<double>(pet_window_->width())
+                    / static_cast<double>(kPetBaseSize.width());
+                pet_web_view_->page()->runJavaScript(
+                    desktop_pet::desktopPetScaleScript(scale), QWebEngineScript::MainWorld);
             }
             wheel->accept();
             return true;

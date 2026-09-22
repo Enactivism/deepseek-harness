@@ -50,6 +50,13 @@ export type Live2DOverlayProps =
 
 type LoadState = 'empty' | 'loading' | 'ready' | 'error'
 
+const DESKTOP_PET_SCALE_MIN = 2 / 3
+const DESKTOP_PET_BASE_WIDTH = 360
+const DESKTOP_PET_BASE_HEIGHT = 480
+const WORKSPACE_SCALE_MIN = 0.7
+const WORKSPACE_SCALE_MAX = 1.35
+const WORKSPACE_SCALE_STEP = 0.05
+
 /** Translate structured import/runtime failures at the UI boundary. */
 function errorText(error: unknown, t: TranslateNS<'live2d'>): string {
   if (error instanceof ModelImportError) {
@@ -174,6 +181,19 @@ export function Live2DOverlay({
   }, [])
 
   useEffect(() => {
+    if (!desktopPet) return
+    const onDesktopPetScale = (event: Event): void => {
+      const detail = (event as CustomEvent<unknown>).detail
+      if (typeof detail !== 'object' || detail === null || !('scale' in detail)) return
+      const nextScale = detail.scale
+      if (typeof nextScale !== 'number' || !Number.isFinite(nextScale) || nextScale <= 0) return
+      setScale(Math.max(DESKTOP_PET_SCALE_MIN, Number(nextScale.toFixed(6))))
+    }
+    window.addEventListener('dsh-desktop-pet-scale', onDesktopPetScale)
+    return () => { window.removeEventListener('dsh-desktop-pet-scale', onDesktopPetScale) }
+  }, [desktopPet])
+
+  useEffect(() => {
     if (!desktopPet || !chatOpen || !sessionsReady) return
     void activatePetChat().catch(() => undefined)
   }, [activatePetChat, chatOpen, desktopPet, sessionsReady])
@@ -289,7 +309,12 @@ export function Live2DOverlay({
           <canvas
             ref={canvasRef}
             className={css.canvas}
-            style={{ opacity, transform: `scale(${scale})` }}
+            style={{
+              opacity,
+              width: desktopPet ? `${Math.round(DESKTOP_PET_BASE_WIDTH * scale)}px` : undefined,
+              height: desktopPet ? `${Math.round(DESKTOP_PET_BASE_HEIGHT * scale)}px` : undefined,
+              transform: desktopPet ? undefined : `scale(${scale})`,
+            }}
             role="img"
             aria-label={model.name}
           />
@@ -408,9 +433,9 @@ export function Live2DOverlay({
             <input
               className={css.range}
               type="range"
-              min="0.7"
-              max="1.35"
-              step="0.05"
+              min={String(WORKSPACE_SCALE_MIN)}
+              max={String(WORKSPACE_SCALE_MAX)}
+              step={String(WORKSPACE_SCALE_STEP)}
               value={scale}
               aria-label={t('controls.scale')}
               onChange={(event) => { setScale(Number(event.currentTarget.value)) }}

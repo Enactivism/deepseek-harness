@@ -31,6 +31,9 @@ bool isChatInteractionArea(const QPoint &position,
                            bool chat_open,
                            int closed_button_area);
 
+/** Build the page event that applies an absolute scale to the desktop-pet model. */
+QString desktopPetScaleScript(double scale);
+
 /** Build the page event that lets Live2D follow a desktop-global pointer position. */
 QString pointerMoveScript(const QPoint &client_position);
 

@@ -37,13 +37,14 @@ int main() {
                && wheel_remainder == 0,
            "wheel input toward the user must produce shrinking steps");
 
-    const QRect initial(100, 100, 360, 480);
-    expect(desktop_pet::wheelResizedGeometry(initial, 1, {24, 32}, {240, 320})
-               == QRect(88, 68, 384, 512),
-           "wheel growth must preserve the bottom-center anchor");
-    expect(desktop_pet::wheelResizedGeometry(initial, -10, {24, 32}, {240, 320})
-               == QRect(160, 260, 240, 320),
-           "wheel shrinking must preserve the anchor and minimum dimensions");
+    const QRect enlarged = desktop_pet::wheelResizedGeometry(
+        {100, 200, 360, 480}, 1, {24, 32}, {240, 320});
+    expect(enlarged == QRect(88, 168, 384, 512),
+           "enlarging must preserve the bottom-center anchor");
+    const QRect minimum = desktop_pet::wheelResizedGeometry(
+        enlarged, -20, {24, 32}, {240, 320});
+    expect(minimum == QRect(160, 360, 240, 320),
+           "shrinking must stop at the minimum window size");
 
     expect(desktop_pet::isChatInteractionArea({40, 40}, {360, 480}, true, 64),
            "an open chat panel must receive interaction across the pet window");
@@ -51,6 +52,11 @@ int main() {
            "the closed chat button area must receive interaction");
     expect(!desktop_pet::isChatInteractionArea({100, 100}, {360, 480}, false, 64),
            "the model surface must keep native pet gestures while chat is closed");
+
+    const QString scale_script = desktop_pet::desktopPetScaleScript(1.066667);
+    expect(scale_script.contains(QStringLiteral("dsh-desktop-pet-scale"))
+               && scale_script.contains(QStringLiteral("scale: 1.066667")),
+           "the synchronized window scale must be sent to the page");
 
     const QString pointer_script = desktop_pet::pointerMoveScript({-32, 600});
     expect(pointer_script.contains(QStringLiteral("clientX: -32")),

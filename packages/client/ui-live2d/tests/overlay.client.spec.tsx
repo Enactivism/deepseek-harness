@@ -114,6 +114,34 @@ describe('Live2D companion right workspace', () => {
     await waitFor(() => { expect((input as HTMLTextAreaElement).value).toBe('') })
   })
 
+  it('resizes the desktop-pet canvas with the synchronized scale', async () => {
+    window.history.replaceState({}, '', '/?dshDesktopPet=1')
+    const view = render(<Live2DOverlay {...props()} />)
+    const input = view.container.querySelector('input[type="file"]')!
+    fireEvent.change(input, { target: { files: selectedFiles() } })
+    await waitFor(() => { expect(view.container.querySelector('canvas')).not.toBeNull() })
+
+    const canvas = view.container.querySelector('canvas')!
+    window.dispatchEvent(new CustomEvent('dsh-desktop-pet-scale', { detail: { scale: 1.15 } }))
+    await waitFor(() => {
+      expect(canvas.style.width).toBe('414px')
+      expect(canvas.style.height).toBe('552px')
+      expect(canvas.style.transform).toBe('')
+    })
+
+    window.dispatchEvent(new CustomEvent('dsh-desktop-pet-scale', { detail: { scale: 2 } }))
+    await waitFor(() => {
+      expect(canvas.style.width).toBe('720px')
+      expect(canvas.style.height).toBe('960px')
+    })
+
+    window.dispatchEvent(new CustomEvent('dsh-desktop-pet-scale', { detail: { scale: 0.2 } }))
+    await waitFor(() => {
+      expect(canvas.style.width).toBe('240px')
+      expect(canvas.style.height).toBe('320px')
+    })
+  })
+
   it('keeps the locale key sets balanced', () => {
     expect(Object.keys(en).sort()).toEqual(Object.keys(zh).sort())
   })
