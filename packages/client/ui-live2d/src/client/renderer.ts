@@ -59,6 +59,10 @@ function installLocalResourceResolver(prepared: PreparedLocalModel): () => void 
  * Start loading one local model and return a synchronous disposer. The
  * disposer is safe to call while the model JSON or WebGL resources are still
  * loading, which matters when the user selects a second model quickly.
+ * @param canvas Canvas receiving the Live2D renderer.
+ * @param bundle Selected model files and entry path.
+ * @param callbacks Renderer lifecycle callbacks.
+ * @returns Synchronous disposer for the renderer and its object URLs.
  */
 export function mountLive2D(
   canvas: HTMLCanvasElement,

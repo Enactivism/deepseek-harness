@@ -14,6 +14,10 @@ The Qt shell handles a `dsh://desktop-pet/toggle` navigation request from the Li
 
 The desktop-only control is selected by the `DeepSeekHarnessQt` user-agent marker. Ordinary browser sessions keep the existing right-workspace behavior and do not expose a native-window action.
 
+The desktop-pet document owns a `DesktopPetChatController` that restores its feature-owned Session id from local storage or creates a Session when none remains. `SessionRuntime.openTransient()` stages that Session and opens its history inside the auxiliary browser runtime without overwriting the primary selection stored in `dsh.sessions.current`; the primary WebEngine view therefore restores and continues its own current Session. The compact panel projects only user and assistant text, while prompt admission still uses the ordinary Session behavior face and its configured agent and tools.
+
+The pet page reports chat visibility through `dsh://desktop-pet/chat/open` and `dsh://desktop-pet/chat/close`. While chat is open, the Qt shell leaves mouse and wheel events to WebEngine so the user can focus the composer, press buttons, and scroll messages. With chat closed, only the lower-right chat-button area bypasses native gestures; the remaining surface retains drag, wheel-resize, and double-click-exit behavior.
+
 The Qt shell probes port 3080 before starting its child process. When an existing Harness service is already listening, the shell reuses that service and does not claim ownership or terminate it on close; this prevents a second launch from turning a working page into an `EADDRINUSE` retry loop.
 
 ## Alternatives considered
@@ -28,6 +32,10 @@ The Qt shell probes port 3080 before starting its child process. When an existin
 
 **Resize from invisible frame edges.** Rejected because it divides the compact surface between move and resize hit regions; wheel resizing leaves the full surface available for moving the pet.
 
+**Reuse the main workspace's current Session for pet chat.** Rejected because messages sent from the floating surface would alter the main conversation's history and model context, and selecting another main conversation would silently move the pet between contexts.
+
+**Implement a native chat transport in Qt.** Rejected because Session creation, prompt admission, streaming projection, reconnection, and tool behavior already belong to the browser object layer; a native path would duplicate those semantics and diverge from the assembled plugin runtime.
+
 ## Consequences
 
-Qt desktop users on a global-coordinate window system get a movable, resizable, always-on-top companion whose gaze follows the pointer across the desktop while the normal workspace remains unchanged. Wheel resizing preserves the 3:4 dimensions and bottom-center position while consuming vertical wheel input over the pet. Cursor polling is active only while the pet is visible, and WebEngine receives an event only when the mapped position changes. Selecting `xcb` trades native Wayland integration for desktop-global pointer tracking and reliable explicit placement; deployments can restore native Wayland through `QT_QPA_PLATFORM`, with focused-surface tracking only. The desktop mode is intentionally a shell capability: web browsers and remote pages cannot request native window changes or global cursor coordinates. Double-click exits the mode because the compact presentation hides the regular controls.
+Qt desktop users on a global-coordinate window system get a movable, resizable, always-on-top companion whose gaze follows the pointer across the desktop while the normal workspace remains unchanged. The pet chat has independent history and provider context; its Session can still appear in the shared Session catalog, but the main surface's current selection and displayed conversation do not move. Wheel resizing preserves the 3:4 dimensions and bottom-center position while consuming vertical wheel input over the closed pet; an open chat panel owns wheel input for message scrolling instead. Cursor polling is active only while the pet is visible, and WebEngine receives an event only when the mapped position changes. Selecting `xcb` trades native Wayland integration for desktop-global pointer tracking and reliable explicit placement; deployments can restore native Wayland through `QT_QPA_PLATFORM`, with focused-surface tracking only. The desktop mode is intentionally a shell capability: web browsers and remote pages cannot request native window changes or global cursor coordinates. Double-click exits the mode only while chat is closed.

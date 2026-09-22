@@ -9,7 +9,7 @@
  */
 import type { Context } from '@deepseek-ai/cordis'
 import type {
-  RpcResult, SessionId, SubagentAddress,
+  RpcResult, SessionId, SubagentAddress, WorkspaceId,
 } from '@deepseek-ai/dsh-api-remotes/client'
 import type { HostObservable, SessionMaybeProvideInfo } from '@deepseek-ai/dsh-client-ui-slots'
 import type { AgentContext } from '../agents/scope.ts'
@@ -35,10 +35,22 @@ export interface ISessions {
    */
   readonly searchResultLimit: number
   /**
+   * Create a session without selecting it.
+   * @param opts - optional Workspace, directory, or caller-preallocated id.
+   * @returns the new session id after it is addressable through {@link binding}.
+   */
+  create(opts?: { workspaceId?: WorkspaceId; cwd?: string; sessionId?: SessionId }): Promise<SessionId>
+  /**
    * Select a session as current.
    * @param id - session id (must exist in the list; unknown ids fail loud).
    */
   open(id: SessionId): void
+  /**
+   * Select and stage a session in this runtime without replacing the persisted
+   * selection shared with the primary browser surface.
+   * @param id - session id (must exist in the list; unknown ids fail loud).
+   */
+  openTransient(id: SessionId): void
   /**
    * Open a healthy catalog child through its exact direct-parent address.
    * @param address - catalog-derived parent and child ids.

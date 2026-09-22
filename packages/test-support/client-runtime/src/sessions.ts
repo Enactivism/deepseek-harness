@@ -184,10 +184,11 @@ export class TestSessions implements ISessions {
 
   /** Calls observed on the service-level face, newest last. */
   readonly calls: {
-    method: 'open' | 'openSubagent' | 'setSubagentCatalogOpen' | 'refreshSubagents'
-      | 'clear' | 'search' | 'fork'
+    method: 'create' | 'open' | 'openTransient' | 'openSubagent'
+      | 'setSubagentCatalogOpen' | 'refreshSubagents' | 'clear' | 'search' | 'fork'
     args: unknown[]
   }[] = []
+  private createdCount = 0
 
   /** The wire schema's `session.search` result bound (production parity). */
   readonly searchResultLimit = SESSION_SEARCH_RESULT_LIMIT
@@ -398,6 +399,20 @@ export class TestSessions implements ISessions {
     return this.records.get(id)?.session
   }
 
+  /** Create one blank fixture session without selecting it. */
+  async create(opts: Parameters<ISessions['create']>[0] = {}): Promise<SessionId> {
+    this.calls.push({ method: 'create', args: [opts] })
+    const id = opts.sessionId ?? `test-created-${++this.createdCount}` as SessionId
+    await this.add({
+      id,
+      summary: {
+        blank: true,
+        ...(opts.cwd === undefined ? {} : { cwd: opts.cwd }),
+      },
+    }, { current: false })
+    return id
+  }
+
   /**
    * Service-level selection call (recorded, then applied to the list store
    * synchronously — inject callbacks call this outside any act window; the
@@ -406,6 +421,16 @@ export class TestSessions implements ISessions {
    */
   open(id: SessionId): void {
     this.calls.push({ method: 'open', args: [id] })
+    this.require(id)
+    this.list.update((draft) => {
+      draft.current = id
+      draft.currentAddress = undefined
+    })
+  }
+
+  /** Select one fixture session through the non-persisting auxiliary-surface path. */
+  openTransient(id: SessionId): void {
+    this.calls.push({ method: 'openTransient', args: [id] })
     this.require(id)
     this.list.update((draft) => {
       draft.current = id

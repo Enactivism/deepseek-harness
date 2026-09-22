@@ -40,6 +40,15 @@ QRect wheelResizedGeometry(const QRect &geometry,
     return {center_x - width / 2, bottom - height, width, height};
 }
 
+bool isChatInteractionArea(const QPoint &position,
+                           const QSize &window_size,
+                           bool chat_open,
+                           int closed_button_area) {
+    if (chat_open) return true;
+    return position.x() >= window_size.width() - closed_button_area
+        && position.y() >= window_size.height() - closed_button_area;
+}
+
 QString pointerMoveScript(const QPoint &client_position) {
     return QStringLiteral(
         "document.dispatchEvent(new MouseEvent('mousemove', {"

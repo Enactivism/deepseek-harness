@@ -266,6 +266,8 @@ export class SessionRuntime implements ISessions {
    * keep the staged scope's frozen view alive until the stage moves on).
    */
   private watched: SessionId | undefined
+  /** Current runtime-only selection whose projection must not overwrite the persisted primary selection. */
+  private transientSelection: SessionId | undefined
   /** Removed-while-staged sessions whose teardown waits for the stage to move away. */
   private readonly deferredRemovals = new Set<SessionId>()
 
@@ -370,7 +372,23 @@ export class SessionRuntime implements ISessions {
    * @param id - listed or addressed session id.
    */
   open(id: SessionId): void {
+    this.transientSelection = undefined
     this.manager.select(id)
+  }
+
+  /**
+   * Stage one session for an auxiliary browser surface without changing the
+   * persisted selection restored by the primary surface.
+   * @param id - listed session id.
+   */
+  openTransient(id: SessionId): void {
+    this.transientSelection = id
+    try {
+      this.manager.select(id)
+    } catch (error) {
+      this.transientSelection = undefined
+      throw error
+    }
   }
 
   /**
@@ -378,6 +396,7 @@ export class SessionRuntime implements ISessions {
    * @param address - catalog-derived parent and child ids.
    */
   openSubagent(address: SubagentAddress): void {
+    this.transientSelection = undefined
     this.manager.selectSubagent(address)
   }
 
@@ -420,6 +439,7 @@ export class SessionRuntime implements ISessions {
    * per the masked-gap contract until the next open() moves the stage.
    */
   clear(): void {
+    this.transientSelection = undefined
     this.manager.clearSelection()
   }
 
@@ -718,7 +738,10 @@ export class SessionRuntime implements ISessions {
     // No current (cleared, or masked gap) wipes the persisted cell — a reload
     // stays on empty; the in-memory selection still resurfaces a masked id.
     if (current === undefined) {
-      if (persisted !== undefined) this.selection.set({})
+      if (this.transientSelection === undefined && persisted !== undefined) this.selection.set({})
+    } else if (current === this.transientSelection) {
+      // Auxiliary surfaces stage and open their own session without replacing
+      // the primary surface's durable navigation cell.
     } else if (byId[current] !== undefined
       && (persisted !== current
         || this.selection.getSnapshot().subagentAddress?.childSessionId !== currentAddress?.childSessionId

@@ -53,6 +53,9 @@ function rewriteReferences(value: unknown, ownerPath: string, urls: ReadonlyMap<
  * Create an in-page resource graph for one model folder. The model entry is
  * rewritten because a blob URL has no usable relative directory; all of its
  * local references therefore need their own object URLs.
+ *
+ * @param bundle Selected model files and entry path.
+ * @returns Prepared entry URL, resolver, and resource disposer.
  */
 export async function prepareLocalModel(bundle: ModelBundle): Promise<PreparedLocalModel> {
   const urls = new Map<string, string>()

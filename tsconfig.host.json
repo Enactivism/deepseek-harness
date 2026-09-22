@@ -27,6 +27,7 @@
     "apps/web/tests/details-session-lifecycle.e2e.ts",
     "apps/web/tests/plugin-config.e2e.ts",
     "apps/web/tests/settings-chrome.e2e.ts",
+    "apps/web/tests/desktop-pet-chat.e2e.ts",
     "apps/web/tests/models-settings.e2e.ts",
     "apps/web/tests/onboarding-deepseek-config.e2e.ts",
     "apps/web/tests/onboarding-usable-provider.e2e.ts",

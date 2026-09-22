@@ -12,6 +12,8 @@ The component is deliberately browser-only. Qt remains a WebEngine/process shell
 
 When the page runs in the Qt shell, a loaded model also exposes `Desktop pet`. The shell opens a second WebEngine view in a frameless, always-on-top 360x480 window, restores the current model there, and hides the rest of that view's Web UI. On window systems that expose global pointer coordinates, the model follows the pointer across the desktop; drag the window to move it, scroll up over the pet to enlarge it or down to shrink it to 240x320, and double-click to close it. Browser sessions do not expose this action.
 
+The floating pet includes a chat button. Opening it restores or creates a dedicated Harness Session and renders that Session's user and assistant text inside a compact panel. Its context is separate from the main workspace chat, and selecting it in the pet's auxiliary browser runtime does not replace the main workspace's persisted current Session. While the panel is open, mouse clicks and wheel input stay with the Web chat controls; close the panel to restore whole-window dragging, wheel resizing, and double-click exit.
+
 ## Development
 
 ```sh
@@ -23,23 +25,23 @@ The browser bundle inlines `l2d`, while React, the slot renderer, and UI primiti
 
 ## Model Experience
 
-### Local companion state
+### Local companion state and desktop-pet chat
 
 #### What the model sees
 
-Nothing. The companion reacts to local file selection and the read-only `current-session` running bit; it never changes `prompt`, messages, tool calls, schemas, or model configuration.
+The embedded workspace companion only reacts to local model state and the selected Session's running bit. Sending from the desktop-pet chat admits the typed text through the dedicated Session's normal `prompt` path, so that Session's agent sees its own conversation history and configured tools; it does not see the main workspace chat unless the user explicitly supplies that content.
 
 #### Token effect
 
-None; the selected model and the running indicator stay in the browser UI.
+Model rendering and its status indicator have no token cost. Desktop-pet chat uses the normal token accounting of its dedicated Session.
 
 #### KV Cache effect
 
-None; no provider request is assembled or sent by this package.
+The local model UI does not affect provider caching. Each desktop-pet chat turn continues the dedicated Session's own provider context, independently of the main workspace Session.
 
 ## Known Limitations and Deferred Work
 
-- **The current model is page-local** — a refresh clears the selected files because the implementation intentionally avoids copying potentially large model assets into Harness settings or a remote store. A later persistence feature can add an explicit IndexedDB library without changing the slot contract.
+- **The current model stays local to this browser profile** — model files are cached in same-origin IndexedDB for the desktop-pet view and are not synchronized to another browser or machine.
 - **One folder at a time** — the picker rejects a selection containing multiple model entry files, which avoids silently displaying the wrong character when a parent directory contains several models.
 - **Renderer coverage follows `l2d`** — the package accepts the two common Cubism entry formats, while a particular model can still fail if its exported resources or license are incomplete. The model owner remains responsible for the model's distribution and usage rights.
-- **Interaction is intentionally small in this first slice** — the model keeps its own idle/tap behavior; chat-linked expressions, voice/lip-sync, and a model library can be added behind a future browser-side service without moving model bytes through the Host.
+- **Chat does not yet drive animation** — the model keeps its own idle/tap behavior; message-linked expressions, voice/lip-sync, and a model library can be added behind a future browser-side service without moving model bytes through the Host.

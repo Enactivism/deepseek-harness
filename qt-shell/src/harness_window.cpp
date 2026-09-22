@@ -56,6 +56,7 @@ constexpr int kPageBootInspectionDelayMs = 1200;
 constexpr int kPageRetryDelayMs = 2000;
 constexpr int kMaxPageRetries = 3;
 constexpr int kPetPointerPollIntervalMs = 16;
+constexpr int kPetChatControlArea = 64;
 const QSize kPetResizeStep(24, 32);
 
 constexpr auto kPetPageScript = R"JS(
@@ -112,16 +113,26 @@ protected:
         Q_UNUSED(type);
         Q_UNUSED(is_main_frame);
         if (url.scheme() == QStringLiteral("dsh")
-            && url.host() == QStringLiteral("desktop-pet")
-            && url.path() == QStringLiteral("/toggle")) {
-            emit desktopPetRequested();
-            return false;
+            && url.host() == QStringLiteral("desktop-pet")) {
+            if (url.path() == QStringLiteral("/toggle")) {
+                emit desktopPetRequested();
+                return false;
+            }
+            if (url.path() == QStringLiteral("/chat/open")) {
+                emit desktopPetChatVisibilityChanged(true);
+                return false;
+            }
+            if (url.path() == QStringLiteral("/chat/close")) {
+                emit desktopPetChatVisibilityChanged(false);
+                return false;
+            }
         }
         return QWebEnginePage::acceptNavigationRequest(url, type, is_main_frame);
     }
 
 signals:
     void desktopPetRequested();
+    void desktopPetChatVisibilityChanged(bool open);
 
 protected:
     QStringList chooseFiles(FileSelectionMode mode,
@@ -348,6 +359,11 @@ HarnessWindow::HarnessWindow(QWidget *parent)
     qApp->installEventFilter(this);
     connect(pet_page, &HarnessWebPage::desktopPetRequested,
             this, &HarnessWindow::toggleDesktopPet);
+    connect(pet_page, &HarnessWebPage::desktopPetChatVisibilityChanged,
+            this, [this](bool open) {
+                pet_chat_open_ = open;
+                if (open) dragging_ = false;
+            });
     connect(pet_web_view_, &QWebEngineView::loadFinished,
             this, &HarnessWindow::preparePetPage);
     pet_pointer_timer_->setInterval(kPetPointerPollIntervalMs);
@@ -641,6 +657,7 @@ void HarnessWindow::toggleDesktopPet() {
 void HarnessWindow::setDesktopPet(bool enabled) {
     if (desktop_pet_ == enabled) return;
     desktop_pet_ = enabled;
+    pet_chat_open_ = false;
     resize_wheel_remainder_ = 0;
     if (enabled) {
         pet_window_->resize(360, 480);
@@ -707,7 +724,13 @@ bool HarnessWindow::eventFilter(QObject *watched, QEvent *event) {
             || watched == pet_web_view_
             || (widget != nullptr && pet_window_ != nullptr && pet_window_->isAncestorOf(widget))
             || inside_pet_window);
-    if (event->type() == QEvent::Wheel && is_pet_target) {
+    const bool chat_interaction = is_pet_target && mouse_event != nullptr
+        && desktop_pet::isChatInteractionArea(
+            pet_window_->mapFromGlobal(global_position),
+            pet_window_->size(),
+            pet_chat_open_,
+            kPetChatControlArea);
+    if (event->type() == QEvent::Wheel && is_pet_target && !pet_chat_open_) {
         auto *wheel = static_cast<QWheelEvent *>(event);
         const int angle_delta = wheel->angleDelta().y();
         if (angle_delta != 0) {
@@ -724,7 +747,7 @@ bool HarnessWindow::eventFilter(QObject *watched, QEvent *event) {
             return true;
         }
     }
-    if (is_pet_target || (desktop_pet_ && dragging_)) {
+    if ((!chat_interaction && is_pet_target) || (desktop_pet_ && dragging_)) {
         if (event->type() == QEvent::MouseButtonDblClick) {
             const auto *mouse = static_cast<QMouseEvent *>(event);
             if (is_pet_target && mouse->button() == Qt::LeftButton) {

@@ -1,0 +1,10 @@
+- complementary "桌宠聊天":
+  - paragraph: 桌宠聊天
+  - paragraph: 独立会话，不影响主界面聊天
+  - button "关闭桌宠聊天":
+    - img
+  - paragraph: 今天一起写代码吧。
+  - paragraph: 好呀，我会在独立会话里陪着你。
+  - textbox "输入消息…"
+  - button "发送" [disabled]:
+    - img

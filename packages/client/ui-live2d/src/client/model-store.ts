@@ -40,7 +40,10 @@ function openDatabase(): Promise<IDBDatabase> {
   })
 }
 
-/** Persist the selected model so an independent desktop-pet page can load it. */
+/**
+ * Persist the selected model so an independent desktop-pet page can load it.
+ * @param bundle Model files and entry path to store.
+ */
 export async function saveModelBundle(bundle: ModelBundle): Promise<void> {
   if (typeof indexedDB === 'undefined') throw new Error('IndexedDB is unavailable')
   const files: StoredFile[] = []
@@ -63,7 +66,10 @@ export async function saveModelBundle(bundle: ModelBundle): Promise<void> {
   database.close()
 }
 
-/** Read the last selected model for the standalone desktop-pet page. */
+/**
+ * Read the last selected model for the standalone desktop-pet page.
+ * @returns Stored model bundle, or null when no model is saved.
+ */
 export async function loadModelBundle(): Promise<ModelBundle | null> {
   if (typeof indexedDB === 'undefined') throw new Error('IndexedDB is unavailable')
   const database = await openDatabase()

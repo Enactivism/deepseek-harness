@@ -18,7 +18,11 @@ interface TransferMessage {
   readonly files: readonly TransferFile[]
 }
 
-/** Send the selected model directly to an already-open or soon-to-open pet page. */
+/**
+ * Send the selected model directly to an already-open or soon-to-open pet page.
+ *
+ * @param bundle Model files and entry path to transfer.
+ */
 export function broadcastModelBundle(bundle: ModelBundle): void {
   if (typeof BroadcastChannel === 'undefined') throw new Error('BroadcastChannel is unavailable')
   const files: TransferFile[] = bundle.files.map(file => ({
@@ -36,17 +40,24 @@ export function broadcastModelBundle(bundle: ModelBundle): void {
   window.setTimeout(() => { channel.close() }, 5000)
 }
 
-/** Subscribe to model transfers from the main workspace page. */
+/**
+ * Subscribe to model transfers from the main workspace page.
+ *
+ * @param onModel Handler for each transferred model bundle.
+ * @returns A function that closes the transfer channel.
+ */
 export function subscribeToModelTransfer(onModel: (model: ModelBundle) => void): () => void {
   if (typeof BroadcastChannel === 'undefined') return () => {}
   const channel = new BroadcastChannel(channelName)
-  const onMessage = (event: MessageEvent<TransferMessage>): void => {
+  const onMessage = (event: MessageEvent<unknown>): void => {
     const message = event.data
-    if (message?.kind !== 'model') return
+    if (typeof message !== 'object' || message === null
+      || !('kind' in message) || message.kind !== 'model') return
+    const transfer = message as TransferMessage
     onModel({
-      name: message.name,
-      entryPath: message.entryPath,
-      files: message.files.map((file) => {
+      name: transfer.name,
+      entryPath: transfer.entryPath,
+      files: transfer.files.map((file) => {
         const restored = file.file as File & { webkitRelativePath: string }
         Object.defineProperty(restored, 'webkitRelativePath', { value: file.path })
         return restored

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { Live2DOverlayProps } from '../src/client/Live2DOverlay.tsx'
@@ -10,19 +10,43 @@ import { Live2DOverlay } from '../src/client/Live2DOverlay.tsx'
 const mountLive2D = vi.hoisted(() => vi.fn(() => () => {}))
 vi.mock('../src/client/renderer.ts', () => ({ mountLive2D }))
 
+beforeEach(() => {
+  Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+    configurable: true,
+    value: vi.fn(),
+  })
+})
+
 afterEach(() => {
   cleanup()
   mountLive2D.mockClear()
+  window.history.replaceState({}, '', '/')
+  Reflect.deleteProperty(HTMLElement.prototype, 'scrollIntoView')
 })
 
 const t = makeTranslate(zh)
-const props = (): Live2DOverlayProps => ({
+const props = (over: Partial<Live2DOverlayProps> = {}): Live2DOverlayProps => ({
   t,
-  useSessions: ((selector: (snapshot: { current: undefined; byId: Record<string, never> }) => boolean) =>
-    selector({ current: undefined, byId: {} })) as unknown as Live2DOverlayProps['useSessions'],
+  useSessions: ((selector: (snapshot: {
+    current: undefined
+    byId: Record<string, never>
+    phase: 'ready'
+  }) => unknown) => selector({ current: undefined, byId: {}, phase: 'ready' })) as unknown as Live2DOverlayProps['useSessions'],
   // The overlay does not read workspace state; this keeps the required global
   // standard prop explicit without coupling the test to the workspace store.
   useWorkspaces: (() => undefined) as unknown as Live2DOverlayProps['useWorkspaces'],
+  usePetChat: ((selector: (snapshot: {
+    status: 'idle'
+    messages: never[]
+    running: false
+    sending: false
+    error: null
+  }) => unknown) => selector({
+    status: 'idle', messages: [], running: false, sending: false, error: null,
+  })) as Live2DOverlayProps['usePetChat'],
+  activatePetChat: vi.fn(() => Promise.resolve()),
+  sendPetMessage: vi.fn(() => Promise.resolve(true)),
+  ...over,
 })
 
 function selectedFiles(): File[] {
@@ -71,6 +95,23 @@ describe('Live2D companion right workspace', () => {
     fireEvent.change(input, { target: { files: [new File(['readme'], 'README.txt')] } })
     expect(screen.getAllByText('Haru')).not.toHaveLength(0)
     expect(screen.getByRole('alert').textContent).toBe('没有找到 .model3.json 或 .model.json 入口文件。')
+  })
+
+  it('opens a desktop-pet chat panel and sends through its injected session controller', async () => {
+    window.history.replaceState({}, '', '/?dshDesktopPet=1')
+    const activatePetChat = vi.fn(() => Promise.resolve())
+    const sendPetMessage = vi.fn(() => Promise.resolve(true))
+    render(<Live2DOverlay {...props({ activatePetChat, sendPetMessage })} />)
+
+    fireEvent.click(screen.getByRole('button', { name: '打开桌宠聊天' }))
+    expect(screen.getByText('独立会话，不影响主界面聊天')).toBeTruthy()
+    await waitFor(() => { expect(activatePetChat).toHaveBeenCalledTimes(1) })
+
+    const input = screen.getByRole('textbox', { name: '输入消息…' })
+    fireEvent.change(input, { target: { value: '  你好，桌宠  ' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    await waitFor(() => { expect(sendPetMessage).toHaveBeenCalledWith('你好，桌宠') })
+    await waitFor(() => { expect((input as HTMLTextAreaElement).value).toBe('') })
   })
 
   it('keeps the locale key sets balanced', () => {

@@ -10,6 +10,7 @@ export type ModelImportErrorCode =
 /** Structured validation failure for a user-selected model set. */
 export class ModelImportError extends Error {
   override readonly name = 'ModelImportError'
+  /** Stable translation key for the validation failure. */
   readonly code: ModelImportErrorCode
 
   constructor(code: ModelImportErrorCode) {
@@ -25,7 +26,11 @@ export interface ModelBundle {
   readonly files: readonly File[]
 }
 
-/** Normalize browser-relative paths so JSON references can be matched safely. */
+/**
+ * Normalize browser-relative paths so JSON references can be matched safely.
+ * @param value Browser-relative or JSON reference path.
+ * @returns Canonical slash-separated relative path.
+ */
 export function normalizePath(value: string): string {
   const parts: string[] = []
   for (const part of value.replaceAll('\\', '/').split('/')) {
@@ -39,13 +44,21 @@ export function normalizePath(value: string): string {
   return parts.join('/')
 }
 
-/** Read the directory-relative path exposed by `webkitdirectory`. */
+/**
+ * Read the directory-relative path exposed by `webkitdirectory`.
+ * @param file Browser-selected model file.
+ * @returns Normalized directory-relative path.
+ */
 export function filePath(file: File): string {
   const relative = (file.webkitRelativePath || '').trim()
   return normalizePath(relative === '' ? file.name : relative)
 }
 
-/** Build a user-facing model name from its entry file. */
+/**
+ * Build a user-facing model name from its entry file.
+ * @param entryPath Directory-relative model entry path.
+ * @returns Display name without the model-file suffix.
+ */
 export function modelName(entryPath: string): string {
   return entryPath
     .split('/')
@@ -54,7 +67,11 @@ export function modelName(entryPath: string): string {
     || 'Live2D'
 }
 
-/** Select and validate one Live2D model directory from a FileList. */
+/**
+ * Select and validate one Live2D model directory from a FileList.
+ * @param files Browser-selected files.
+ * @returns Validated model bundle.
+ */
 export function buildModelBundle(files: readonly File[]): ModelBundle {
   if (files.length === 0) throw new ModelImportError('no-files')
 

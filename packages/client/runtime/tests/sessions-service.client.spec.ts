@@ -231,6 +231,28 @@ describe('current selection (migrated from ui-layout, arbitrated into the list s
     await feedList(second, [{ id: 's1' }])
     expect(second.svc.list.getSnapshot().current).toBe('s1')
   })
+
+  it('openTransient() stages history without replacing the persisted primary selection', async () => {
+    const storage = new Map<string, string>()
+    vi.stubGlobal('localStorage', {
+      getItem: (k: string) => storage.get(k) ?? null,
+      setItem: (k: string, v: string) => { storage.set(k, v) },
+    })
+    const first = bench()
+    await feedList(first, [{ id: 'main' }, { id: 'pet' }])
+    first.svc.open(sid('main'))
+    first.svc.openTransient(sid('pet'))
+
+    expect(first.svc.list.getSnapshot().current).toBe('pet')
+    expect(storage.get('dsh.sessions.current')).toContain('main')
+    expect(first.api.callsOf('session.history').map(call => (
+      call as { sessionId: string }
+    ).sessionId)).toEqual(['main', 'pet'])
+
+    const second = bench()
+    await feedList(second, [{ id: 'main' }, { id: 'pet' }])
+    expect(second.svc.list.getSnapshot().current).toBe('main')
+  })
 })
 
 describe('cell (render-layer session kit)', () => {

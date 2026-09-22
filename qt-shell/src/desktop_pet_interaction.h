@@ -25,6 +25,12 @@ QRect wheelResizedGeometry(const QRect &geometry,
                            const QSize &step_size,
                            const QSize &minimum_size);
 
+/** Whether the point belongs to Web chat instead of native pet gestures. */
+bool isChatInteractionArea(const QPoint &position,
+                           const QSize &window_size,
+                           bool chat_open,
+                           int closed_button_area);
+
 /** Build the page event that lets Live2D follow a desktop-global pointer position. */
 QString pointerMoveScript(const QPoint &client_position);
 

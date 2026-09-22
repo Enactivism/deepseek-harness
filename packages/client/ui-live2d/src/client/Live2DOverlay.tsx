@@ -1,16 +1,24 @@
 /** Right-workspace Live2D companion surface and local model picker. */
 
-import { useEffect, useRef, useState, type ChangeEvent, type InputHTMLAttributes } from 'react'
-import type { SessionListState } from '@deepseek-ai/dsh-client-runtime/client'
+import {
+  useEffect, useRef, useState, type ChangeEvent, type FormEvent,
+  type InputHTMLAttributes, type KeyboardEvent,
+} from 'react'
+import type { ObservableSnapshot, SessionListState } from '@deepseek-ai/dsh-client-runtime/client'
 import {
   Button,
   IconCloseOutline16,
   IconFolderOpenOutline16,
+  IconNewChatOutline16,
+  IconSendOutline16,
   IconSettingsOutline16,
   IconSparkle16,
   IconTrashOutline16,
 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { PropsLocale, PropsRuntime, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
+import type {
+  InjectFace, PropsLocale, PropsRuntime, TranslateNS,
+} from '@deepseek-ai/dsh-client-ui-slots'
+import type { DesktopPetChatView } from './desktop-pet-chat.ts'
 import type { Live2DKey } from './locales.ts'
 import { buildModelBundle, ModelImportError, type ModelBundle } from './model-files.ts'
 import { mountLive2D } from './renderer.ts'
@@ -18,8 +26,27 @@ import { loadModelBundle, saveModelBundle } from './model-store.ts'
 import { broadcastModelBundle, subscribeToModelTransfer } from './model-transfer.ts'
 import css from './Live2DOverlay.module.css'
 
+/** Registration-side controller face for the desktop-pet chat panel. */
+export interface DesktopPetChatInjected {
+  hooks: {
+    /** Dedicated Session projection bound by the renderer as usePetChat. */
+    petChat: ObservableSnapshot<DesktopPetChatView>
+  }
+  /** Restore or create the desktop pet's isolated Session. */
+  activatePetChat: () => Promise<void>
+  /**
+   * Send one text message to the desktop pet's isolated Session.
+   * @param text - trimmed non-empty message.
+   * @returns whether the Host accepted the message.
+   */
+  sendPetMessage: (text: string) => Promise<boolean>
+}
+
 /** Props composed by the shell's additive right-workspace slot. */
-export type Live2DOverlayProps = PropsRuntime<'shell.right'> & PropsLocale<'live2d'>
+export type Live2DOverlayProps =
+  PropsRuntime<'shell.right'>
+  & PropsLocale<'live2d'>
+  & InjectFace<DesktopPetChatInjected>
 
 type LoadState = 'empty' | 'loading' | 'ready' | 'error'
 
@@ -65,7 +92,13 @@ const directoryInputProps = {
  * flex layout accounts for the panel width, so model pixels never cover the
  * conversation or composer.
  */
-export function Live2DOverlay({ t, useSessions }: Live2DOverlayProps) {
+export function Live2DOverlay({
+  t,
+  useSessions,
+  usePetChat,
+  activatePetChat,
+  sendPetMessage,
+}: Live2DOverlayProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [model, setModel] = useState<ModelBundle | null>(null)
@@ -76,16 +109,22 @@ export function Live2DOverlay({ t, useSessions }: Live2DOverlayProps) {
   const [controlsOpen, setControlsOpen] = useState(false)
   const [scale, setScale] = useState(1)
   const [opacity, setOpacity] = useState(1)
+  const [chatOpen, setChatOpen] = useState(false)
+  const [chatDraft, setChatDraft] = useState('')
+  const chatEndRef = useRef<HTMLDivElement>(null)
   const savePromiseRef = useRef<Promise<void> | null>(null)
   const [desktopPet, setDesktopPet] = useState(() => (
     typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('dshDesktopPet')
   ))
   const desktopShell = typeof navigator !== 'undefined'
     && navigator.userAgent.includes('DeepSeekHarnessQt')
-  const running = useSessions((snapshot: SessionListState) => {
+  const primaryRunning = useSessions((snapshot: SessionListState) => {
     const current = snapshot.current
     return current !== undefined && snapshot.byId[current]?.running === true
   })
+  const sessionsReady = useSessions((snapshot: SessionListState) => snapshot.phase === 'ready')
+  const petChat = usePetChat(snapshot => snapshot)
+  const running = desktopPet ? petChat.running : primaryRunning
 
   useEffect(() => {
     if (model === null) {
@@ -134,6 +173,21 @@ export function Live2DOverlay({ t, useSessions }: Live2DOverlayProps) {
     return () => { window.removeEventListener('dsh-desktop-pet-change', onDesktopPetChange) }
   }, [])
 
+  useEffect(() => {
+    if (!desktopPet || !chatOpen || !sessionsReady) return
+    void activatePetChat().catch(() => undefined)
+  }, [activatePetChat, chatOpen, desktopPet, sessionsReady])
+
+  useEffect(() => {
+    if (!desktopPet || !desktopShell) return
+    window.location.assign(`dsh://desktop-pet/chat/${chatOpen ? 'open' : 'close'}`)
+  }, [chatOpen, desktopPet, desktopShell])
+
+  useEffect(() => {
+    if (!chatOpen) return
+    chatEndRef.current?.scrollIntoView({ block: 'end' })
+  }, [chatOpen, petChat.messages])
+
   const openPicker = (): void => { fileInputRef.current?.click() }
 
   const onFilesSelected = (event: ChangeEvent<HTMLInputElement>): void => {
@@ -163,6 +217,21 @@ export function Live2DOverlay({ t, useSessions }: Live2DOverlayProps) {
     setControlsOpen(true)
   }
 
+  const submitPetChat = (event: FormEvent<HTMLFormElement>): void => {
+    event.preventDefault()
+    const text = chatDraft.trim()
+    if (text === '') return
+    void sendPetMessage(text).then((accepted) => {
+      if (accepted) setChatDraft('')
+    }).catch(() => undefined)
+  }
+
+  const onPetChatKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>): void => {
+    if (event.key !== 'Enter' || event.shiftKey) return
+    event.preventDefault()
+    event.currentTarget.form?.requestSubmit()
+  }
+
   if (!visible) {
     return (
       <button
@@ -185,6 +254,7 @@ export function Live2DOverlay({ t, useSessions }: Live2DOverlayProps) {
       data-desktop-pet={desktopPet || undefined}
       data-state={state}
       data-running={running || undefined}
+      data-desktop-pet-chat-open={chatOpen || undefined}
       aria-label={t('brand')}
     >
       <header className={css.header}>
@@ -235,6 +305,83 @@ export function Live2DOverlay({ t, useSessions }: Live2DOverlayProps) {
         )}
         {model !== null && <span className={css.modelBadge}>{model.name}</span>}
       </div>
+
+      {desktopPet && (
+        <button
+          type="button"
+          className={css.chatToggle}
+          aria-label={chatOpen ? t('chat.close') : t('chat.open')}
+          aria-expanded={chatOpen}
+          onClick={() => { setChatOpen(open => !open) }}
+        >
+          {chatOpen ? <IconCloseOutline16 size={18} /> : <IconNewChatOutline16 size={18} />}
+        </button>
+      )}
+
+      {desktopPet && chatOpen && (
+        <aside className={css.chatPanel} aria-label={t('chat.title')}>
+          <header className={css.chatHeader}>
+            <div>
+              <p className={css.chatTitle}>{t('chat.title')}</p>
+              <p className={css.chatIsolation}>{t('chat.isolated')}</p>
+            </div>
+            <button
+              type="button"
+              className={css.chatClose}
+              aria-label={t('chat.close')}
+              onClick={() => { setChatOpen(false) }}
+            >
+              <IconCloseOutline16 size={16} />
+            </button>
+          </header>
+          <div className={css.chatMessages} aria-live="polite">
+            {petChat.status === 'loading' && (
+              <p className={css.chatNotice}>{t('chat.loading')}</p>
+            )}
+            {petChat.status === 'ready' && petChat.messages.length === 0 && (
+              <p className={css.chatNotice}>{t('chat.empty')}</p>
+            )}
+            {petChat.messages.map(message => (
+              <p
+                key={message.id}
+                className={message.role === 'user' ? css.chatMessageUser : css.chatMessageAssistant}
+                data-streaming={message.streaming || undefined}
+              >
+                {message.text}
+              </p>
+            ))}
+            {petChat.running && (
+              <p className={css.chatThinking}>{t('chat.thinking')}</p>
+            )}
+            <div ref={chatEndRef} />
+          </div>
+          {petChat.error !== null && (
+            <p className={css.chatError} role="alert">
+              {t('chat.error', { message: petChat.error })}
+            </p>
+          )}
+          <form className={css.chatComposer} onSubmit={submitPetChat}>
+            <textarea
+              className={css.chatInput}
+              rows={1}
+              value={chatDraft}
+              placeholder={t('chat.placeholder')}
+              aria-label={t('chat.placeholder')}
+              disabled={!sessionsReady || petChat.sending}
+              onChange={(event) => { setChatDraft(event.currentTarget.value) }}
+              onKeyDown={onPetChatKeyDown}
+            />
+            <button
+              type="submit"
+              className={css.chatSend}
+              aria-label={petChat.sending ? t('chat.sending') : t('chat.send')}
+              disabled={!sessionsReady || petChat.sending || chatDraft.trim() === ''}
+            >
+              <IconSendOutline16 size={16} />
+            </button>
+          </form>
+        </aside>
+      )}
 
       {model !== null && (
         <div className={css.modelInfo}>
@@ -325,7 +472,6 @@ export function Live2DOverlay({ t, useSessions }: Live2DOverlayProps) {
             aria-label={desktopPet ? t('action.exitDesktopPet') : t('action.desktopPet')}
             onClick={() => {
               const next = model
-              if (next === null) return
               void (savePromiseRef.current ?? Promise.resolve()).catch(() => undefined).then(() => {
                 window.location.assign('dsh://desktop-pet/toggle')
                 for (const delay of [500, 1500, 3000]) {

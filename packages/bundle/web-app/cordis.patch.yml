@@ -181,7 +181,7 @@
       name: '@deepseek-ai/dsh-client-ui-layout'
 
     # Frame-wide local Live2D companion. The browser half owns model file
-    # selection and object URLs; no model bytes cross the Host boundary.
+    # selection and object URLs; no model asset bytes cross the Host boundary.
     - id: ui-live2d
       name: '@deepseek-ai/dsh-client-ui-live2d'
 

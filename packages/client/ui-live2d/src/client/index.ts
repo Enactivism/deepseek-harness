@@ -5,7 +5,10 @@ import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 // Type-only: pull the frame's additive right-workspace slot declaration.
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
-import { Live2DOverlay } from './Live2DOverlay.tsx'
+import {
+  Live2DOverlay, type DesktopPetChatInjected,
+} from './Live2DOverlay.tsx'
+import { DesktopPetChatController } from './desktop-pet-chat.ts'
 import { en, NS, zh, type Live2DKey } from './locales.ts'
 
 export { Live2DOverlay } from './Live2DOverlay.tsx'
@@ -22,15 +25,25 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 }
 
 /** Services required by the right-workspace registration and its bilingual copy. */
-export const inject = ['slots', 'locale']
+export const inject = ['slots', 'sessions', 'locale']
 
 /** Register the companion as an additive right-workspace surface. */
 export function apply(ctx: ClientContext): void {
+  const petChat = new DesktopPetChatController(
+    ctx.sessions,
+    typeof localStorage === 'undefined' ? undefined : localStorage,
+  )
+  ctx.effect(() => () => { petChat.dispose() }, 'ui-live2d: desktop-pet chat')
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-live2d: dictionaries')
   ctx.slots.inject('shell.right', () => ctx.slots.register({
     name: 'shell.right',
     id: 'live2d-companion',
     order: 40,
     locale: NS,
+    inject: (): DesktopPetChatInjected => ({
+      hooks: { petChat },
+      activatePetChat: async () => { await petChat.activate() },
+      sendPetMessage: text => petChat.send(text),
+    }),
   }, Live2DOverlay))
 }

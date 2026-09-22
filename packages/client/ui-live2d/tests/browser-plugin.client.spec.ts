@@ -17,7 +17,7 @@ afterEach(async () => {
 
 describe('ui-live2d browser plugin', () => {
   it('declares its slot and locale services', () => {
-    expect(inject).toEqual(['slots', 'locale'])
+    expect(inject).toEqual(['slots', 'sessions', 'locale'])
   })
 
   it('registers an additive right workspace and releases it with the plugin', async () => {
@@ -29,6 +29,7 @@ describe('ui-live2d browser plugin', () => {
     } as never, () => null)
     const locale = new LocaleRuntime(ctx)
     ctx.provide('locale', locale)
+    ctx.provide('sessions', {} as never)
 
     const fiber = ctx.plugin({ inject, apply })
     disposers.push(() => fiber.dispose())

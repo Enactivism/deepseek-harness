@@ -45,6 +45,13 @@ int main() {
                == QRect(160, 260, 240, 320),
            "wheel shrinking must preserve the anchor and minimum dimensions");
 
+    expect(desktop_pet::isChatInteractionArea({40, 40}, {360, 480}, true, 64),
+           "an open chat panel must receive interaction across the pet window");
+    expect(desktop_pet::isChatInteractionArea({320, 440}, {360, 480}, false, 64),
+           "the closed chat button area must receive interaction");
+    expect(!desktop_pet::isChatInteractionArea({100, 100}, {360, 480}, false, 64),
+           "the model surface must keep native pet gestures while chat is closed");
+
     const QString pointer_script = desktop_pet::pointerMoveScript({-32, 600});
     expect(pointer_script.contains(QStringLiteral("clientX: -32")),
            "pointer script must preserve coordinates left of the pet window");

@@ -64,6 +64,7 @@ private:
     bool stopping_ = false;
     bool owns_server_ = false;
     bool desktop_pet_ = false;
+    bool pet_chat_open_ = false;
     QPoint drag_offset_{};
     bool dragging_ = false;
     int resize_wheel_remainder_ = 0;
