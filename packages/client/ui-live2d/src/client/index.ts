@@ -5,9 +5,9 @@ import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 // Type-only: pull the frame's additive right-workspace slot declaration.
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
-import {
-  Live2DOverlay, type DesktopPetChatInjected,
-} from './Live2DOverlay.tsx'
+// Type-only: pull the desktop-pet model child-slot declaration into this assembly.
+import type {} from '@deepseek-ai/dsh-client-ui-model-selection/client'
+import { Live2DOverlay, type DesktopPetChatInjected } from './Live2DOverlay.tsx'
 import { DesktopPetChatController } from './desktop-pet-chat.ts'
 import { en, NS, zh, type Live2DKey } from './locales.ts'
 
@@ -40,10 +40,14 @@ export function apply(ctx: ClientContext): void {
     id: 'live2d-companion',
     order: 40,
     locale: NS,
+    children: {
+      'desktop-pet.model': { kind: 'single', scope: 'root' },
+    },
     inject: (): DesktopPetChatInjected => ({
       hooks: { petChat },
       activatePetChat: async () => { await petChat.activate() },
       sendPetMessage: text => petChat.send(text),
+      answerPetApproval: outcome => petChat.answerApproval(outcome),
     }),
   }, Live2DOverlay))
 }

@@ -14,9 +14,9 @@ Qt 壳拦截 Live2D 组件发出的 `dsh://desktop-pet/toggle` 导航请求。�
 
 桌面入口通过 `DeepSeekHarnessQt` user-agent 标记识别。普通浏览器仍保持右侧栏行为，不显示原生窗口操作。
 
-桌宠文档持有一个 `DesktopPetChatController`，从本地存储恢复功能专用 Session id；找不到对应 Session 时就创建一个。`SessionRuntime.openTransient()` 会在辅助浏览器运行时中暂存该 Session 并打开历史记录，但不会覆盖 `dsh.sessions.current` 中的主界面选择，因此主 WebEngine 视图仍会恢复并继续自己的当前 Session。紧凑面板只投影用户和助手文本，消息提交仍通过普通 Session 行为接口，使用该 Session 正常配置的智能体和工具。
+桌宠文档持有一个 `DesktopPetChatController`，从本地存储恢复功能专用 Session id；找不到对应 Session 时就创建一个。`SessionRuntime.openTransient()` 会在辅助浏览器运行时中暂存该 Session 并打开历史记录，但不会覆盖 `dsh.sessions.current` 中的主界面选择，因此主 WebEngine 视图仍会恢复并继续自己的当前 Session。紧凑面板投影用户和助手文本；工具等待确认时，面板会显示原因和对应命令，并提供一次性允许/拒绝操作。消息提交和确认响应仍通过普通 Session 行为接口，使用该 Session 正常配置的智能体和工具。
 
-桌宠页面通过 `dsh://desktop-pet/chat/open` 与 `dsh://desktop-pet/chat/close` 报告聊天可见状态。聊天展开时，Qt 壳会把鼠标和滚轮事件留给 WebEngine，以便聚焦输入区、点击按钮和滚动消息。聊天关闭时，只有右下角聊天按钮区域绕过原生手势；其余区域仍然支持拖动、模型缩放和双击退出。
+桌宠页面通过 `dsh://desktop-pet/chat/open` 与 `dsh://desktop-pet/chat/close` 报告聊天可见状态。Qt 壳收到请求后，会打开一个带系统装饰的独立 `QWidget`，其中的第二个 WebEngine 页面使用 `dshDesktopPetChat=1`，负责可调整大小的聊天界面；透明桌宠页面继续保留拖动、模型缩放和双击退出行为。聊天标题栏使用主界面模型选择器相同的 per-session `ModelDirectory`，因此服务商/模型和推理等级变更只提交到桌宠专用 Session。普通浏览器预览没有 Qt 壳提供的第二个原生窗口，因此继续将紧凑聊天内嵌显示。
 
 Qt 壳会在启动子进程前探测 3080 端口。若已有 Harness 服务正在监听，外壳会直接复用该服务，不声明所有权，也不会在关闭时终止它；这样再次启动不会把正常页面变成 `EADDRINUSE` 重试循环。
 

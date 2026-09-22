@@ -5,8 +5,10 @@ import type {
   ConversationSnapshot,
   ISessions,
   ObservableSnapshot,
+  RunningToolCall,
   SessionFace,
   SessionId,
+  ToolCallBlock,
 } from '@deepseek-ai/dsh-client-runtime/client'
 
 const PET_SESSION_STORAGE_KEY = 'dsh.live2d.desktop-pet-session'
@@ -23,6 +25,21 @@ export interface DesktopPetChatMessage {
   streaming?: true
 }
 
+/** The approval prompt currently blocking the desktop-pet Session, if any. */
+export interface DesktopPetChatApproval {
+  /** Stable request identity used to reset one-shot button state. */
+  key: string
+  /** Tool that requested the approval. */
+  toolName: string
+  /** Model-provided reason, when present. */
+  reason?: string
+  /** Paired tool call's command argument, when available. */
+  command?: string
+}
+
+/** Outcomes the desktop-pet approval card can submit. */
+export type DesktopPetChatApprovalOutcome = 'allowed-once' | 'rejected'
+
 /** Immutable desktop-pet chat projection bound into the Live2D component. */
 export interface DesktopPetChatView {
   /** Session preparation lifecycle. */
@@ -35,6 +52,8 @@ export interface DesktopPetChatView {
   running: boolean
   /** Whether one prompt admission is in flight. */
   sending: boolean
+  /** Approval prompt currently blocking the Session, or null when none is pending. */
+  pendingApproval: DesktopPetChatApproval | null
   /** Preparation or prompt error rendered by the panel. */
   error: string | null
 }
@@ -55,6 +74,7 @@ const INITIAL_VIEW: DesktopPetChatView = {
   messages: [],
   running: false,
   sending: false,
+  pendingApproval: null,
   error: null,
 }
 
@@ -90,6 +110,44 @@ function messagesOf(snapshot: ConversationSnapshot): readonly DesktopPetChatMess
     }
   }
   return messages
+}
+
+function runningCallOf(
+  calls: readonly ToolCallBlock[],
+  callId: string,
+): RunningToolCall | undefined {
+  for (const call of calls) {
+    if (call.callId === callId && !('kind' in call)) return call
+    const nested = runningCallOf(call.subCalls, callId)
+    if (nested !== undefined) return nested
+  }
+  return undefined
+}
+
+/** Read the command argument paired with one pending approval. */
+function commandOf(snapshot: ConversationSnapshot, callId: string | undefined): string | undefined {
+  if (callId === undefined) return undefined
+  const call = runningCallOf(snapshot.runningCalls, callId)
+  if (call === undefined) return undefined
+  try {
+    const args = JSON.parse(call.argsRaw) as Record<string, unknown>
+    return typeof args.command === 'string' ? args.command : undefined
+  } catch {
+    // Unparseable model arguments do not prevent the approval itself from rendering.
+    return undefined
+  }
+}
+
+function approvalOf(snapshot: ConversationSnapshot): DesktopPetChatApproval | null {
+  const wait = snapshot.pending.find(item => item.kind === 'approval')
+  if (wait === undefined) return null
+  const command = commandOf(snapshot, wait.payload.callId)
+  return {
+    key: wait.key,
+    toolName: wait.payload.toolName,
+    ...(wait.payload.reason === undefined ? {} : { reason: wait.payload.reason }),
+    ...(command === undefined ? {} : { command }),
+  }
 }
 
 /**
@@ -189,6 +247,36 @@ export class DesktopPetChatController implements ObservableSnapshot<DesktopPetCh
     }
   }
 
+  /**
+   * Answer the approval currently blocking the dedicated Session.
+   * @param outcome - one-shot allow or reject decision.
+   * @returns whether the Host accepted the response carrier.
+   */
+  async answerApproval(outcome: DesktopPetChatApprovalOutcome): Promise<boolean> {
+    await this.activate()
+    const session = this.session
+    const sessionId = this.sessionId
+    if (session === undefined || sessionId === undefined) return false
+    const wait = session.getSnapshot().pending.find(item => item.kind === 'approval')
+    if (wait === undefined) return false
+    try {
+      const receipt = await wait.respond({
+        ok: true,
+        value: {
+          sessionId,
+          approvalId: wait.payload.approvalId,
+          outcome,
+        },
+      })
+      if (receipt.accepted) return true
+      this.actionError = `approval response rejected: ${receipt.reason}`
+    } catch (error: unknown) {
+      this.actionError = errorMessage(error)
+    }
+    this.publishSession()
+    return false
+  }
+
   /** Stop publications and release the Session subscription. */
   dispose(): void {
     if (this.disposed) return
@@ -235,6 +323,7 @@ export class DesktopPetChatController implements ObservableSnapshot<DesktopPetCh
       messages: messagesOf(snapshot),
       running: snapshot.running,
       sending: this.sending,
+      pendingApproval: approvalOf(snapshot),
       error: this.actionError ?? snapshot.openError?.message ?? snapshot.promptError?.error.message ?? null,
     })
   }

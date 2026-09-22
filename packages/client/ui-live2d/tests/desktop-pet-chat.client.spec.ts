@@ -2,7 +2,7 @@
 
 import { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import { PendingWait, type SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import { TestSessions } from '@deepseek-ai/dsh-client-test-runtime'
 import {
   DesktopPetChatController, type DesktopPetChatSessions,
@@ -76,6 +76,46 @@ describe('desktop-pet chat controller', () => {
     })
     expect(listener).toHaveBeenCalled()
     unsubscribe()
+  })
+
+  it('projects a pending command approval and answers it through the Session carrier', async () => {
+    const runtime = sessions()
+    const response = vi.fn(async () => ({ accepted: true as const }))
+    const sessionId = 'pet' as SessionId
+    const wait = new PendingWait('approval', 'approval-rpc' as never, sessionId, {
+      approvalId: 'approval-1' as never,
+      toolName: 'bash',
+      callId: 'call-1' as never,
+      reason: '需要写入工作区文件',
+    }, response)
+    await runtime.add({
+      id: 'pet',
+      snapshot: {
+        pending: [wait],
+        runningCalls: [{
+          callId: 'call-1', name: 'bash', argsRaw: '{"command":"echo desktop pet"}',
+          turn: 1, step: 1, time: 1, callView: null, subCalls: [],
+        }] as never,
+      },
+    }, { current: false })
+    const chat = controller(runtime, { getItem: vi.fn(() => 'pet'), setItem: vi.fn() })
+
+    await chat.activate()
+    expect(chat.getSnapshot().pendingApproval).toEqual({
+      key: 'a:approval-rpc',
+      toolName: 'bash',
+      reason: '需要写入工作区文件',
+      command: 'echo desktop pet',
+    })
+    await expect(chat.answerApproval('allowed-once')).resolves.toBe(true)
+    expect(response).toHaveBeenCalledWith({
+      type: 'client-response',
+      rpcId: 'approval-rpc',
+      result: {
+        ok: true,
+        value: { sessionId, approvalId: 'approval-1', outcome: 'allowed-once' },
+      },
+    })
   })
 
   it('creates and remembers a missing session, then reports prompt acceptance and rejection', async () => {

@@ -38,7 +38,10 @@ private:
     void updateStatus(const QString &message);
     void toggleDesktopPet();
     void setDesktopPet(bool enabled);
+    void setDesktopPetChat(bool open);
     void preparePetPage(bool ok);
+    void preparePetChatPage(bool ok);
+    void notifyDesktopPetChatVisibility(bool open);
     void updateDesktopPetPointer();
 
     QProcess *server_;
@@ -48,6 +51,8 @@ private:
     QWebEngineView *web_view_;
     QWidget *pet_window_ = nullptr;
     QWebEngineView *pet_web_view_ = nullptr;
+    QWidget *chat_window_ = nullptr;
+    QWebEngineView *chat_web_view_ = nullptr;
     QWidget *state_view_;
     QStackedLayout *content_stack_ = nullptr;
     QLabel *state_icon_;
@@ -64,7 +69,6 @@ private:
     bool stopping_ = false;
     bool owns_server_ = false;
     bool desktop_pet_ = false;
-    bool pet_chat_open_ = false;
     QPoint drag_offset_{};
     bool dragging_ = false;
     int scale_wheel_remainder_ = 0;

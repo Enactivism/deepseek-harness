@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-02-live2d-desktop-pet-mode.md
-2026-09-02-live2d-desktop-pet-mode.md: 7174f5b3996166ef7ff8e323422cc8efc4dcdfd6
-2026-09-02-live2d-desktop-pet-mode.zh.md: e7b093aef5996b0a4d8eb40558cd9b1de341d12a
+2026-09-02-live2d-desktop-pet-mode.md: 97327e9edd3820243b6c047373a3cd09c2492379
+2026-09-02-live2d-desktop-pet-mode.zh.md: e0d36cbc3ad44906481ee6da346568a18609e207

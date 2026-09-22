@@ -16,6 +16,7 @@ import { ZH_BROWSER_LOCALE, saveFailureShot } from './support.ts'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/desktop-pet-chat', import.meta.url))
 const UI_EXPECTED = join(SNAPSHOT_DIR, 'ui.expected.md')
+const CHAT_WINDOW_EXPECTED = join(SNAPSHOT_DIR, 'chat-window.expected.md')
 const MODE = webSnapshotMode()
 const MAIN_ID = SessionId('desktop-pet-main')
 const PET_ID = SessionId('desktop-pet-chat')
@@ -26,8 +27,10 @@ describe('web e2e: isolated desktop-pet chat', () => {
   let context: BrowserContext
   let mainPage: Page
   let petPage: Page
+  let chatPage: Page
   let mainTripwire: ReturnType<typeof watchConsole>
   let petTripwire: ReturnType<typeof watchConsole>
+  let chatTripwire: ReturnType<typeof watchConsole>
 
   beforeAll(async () => {
     scaffold = await launchWebScaffold({})
@@ -74,6 +77,10 @@ describe('web e2e: isolated desktop-pet chat', () => {
     petTripwire = watchConsole(petPage)
     await petPage.goto(`${scaffold.baseUrl}/?dshDesktopPet=1`, { waitUntil: 'load' })
     await petPage.waitForSelector('[data-live2d-companion="true"]', { timeout: 30_000 })
+    chatPage = await context.newPage()
+    chatTripwire = watchConsole(chatPage)
+    await chatPage.goto(`${scaffold.baseUrl}/?dshDesktopPet=1&dshDesktopPetChat=1`, { waitUntil: 'load' })
+    await chatPage.waitForSelector('[data-live2d-companion="true"]', { timeout: 30_000 })
   }, 120_000)
 
   afterAll(async () => {
@@ -106,7 +113,21 @@ describe('web e2e: isolated desktop-pet chat', () => {
     expect(petTripwire.pageErrors).toEqual([])
   }, 60_000)
 
+  it('renders the main model selector in the standalone chat document', async () => {
+    const panel = chatPage.getByRole('complementary', { name: '桌宠聊天' })
+    await panel.getByText('好呀，我会在独立会话里陪着你。', { exact: true }).waitFor({ timeout: 15_000 })
+    await panel.getByRole('button', { name: /^选择模型/ }).waitFor({ state: 'visible', timeout: 15_000 })
+
+    const snapshot = await captureStableAria(
+      chatPage,
+      '[aria-label="桌宠聊天"]',
+      scaffold.workspaceCwd,
+    )
+    await compareOrRefreshGolden(CHAT_WINDOW_EXPECTED, snapshot, MODE)
+    expect(chatTripwire.pageErrors).toEqual([])
+  }, 60_000)
+
   it('keeps the fixture inventory closed', async () => {
-    await assertFixtureInventory(SNAPSHOT_DIR, ['ui.expected.md'])
+    await assertFixtureInventory(SNAPSHOT_DIR, ['chat-window.expected.md', 'ui.expected.md'])
   })
 })

@@ -5,6 +5,8 @@ import {
   type InputHTMLAttributes, type KeyboardEvent,
 } from 'react'
 import type { ObservableSnapshot, SessionListState } from '@deepseek-ai/dsh-client-runtime/client'
+// Type-only: pull the model locale namespace into the composed overlay props.
+import type {} from '@deepseek-ai/dsh-client-ui-model-selection/client'
 import {
   Button,
   IconCloseOutline16,
@@ -16,9 +18,12 @@ import {
   IconTrashOutline16,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
-  InjectFace, PropsLocale, PropsRuntime, TranslateNS,
+  InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime, TranslateNS,
 } from '@deepseek-ai/dsh-client-ui-slots'
-import type { DesktopPetChatView } from './desktop-pet-chat.ts'
+import type {
+  DesktopPetChatApprovalOutcome,
+  DesktopPetChatView,
+} from './desktop-pet-chat.ts'
 import type { Live2DKey } from './locales.ts'
 import { buildModelBundle, ModelImportError, type ModelBundle } from './model-files.ts'
 import { mountLive2D } from './renderer.ts'
@@ -40,11 +45,18 @@ export interface DesktopPetChatInjected {
    * @returns whether the Host accepted the message.
    */
   sendPetMessage: (text: string) => Promise<boolean>
+  /**
+   * Answer the approval currently blocking the desktop pet's Session.
+   * @param outcome - one-shot allow or reject decision.
+   * @returns whether the Host accepted the response.
+   */
+  answerPetApproval: (outcome: DesktopPetChatApprovalOutcome) => Promise<boolean>
 }
 
 /** Props composed by the shell's additive right-workspace slot. */
 export type Live2DOverlayProps =
   PropsRuntime<'shell.right'>
+  & PropsRenderSlots<'desktop-pet.model'>
   & PropsLocale<'live2d'>
   & InjectFace<DesktopPetChatInjected>
 
@@ -105,6 +117,8 @@ export function Live2DOverlay({
   usePetChat,
   activatePetChat,
   sendPetMessage,
+  answerPetApproval,
+  renderSlot,
 }: Live2DOverlayProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -116,8 +130,11 @@ export function Live2DOverlay({
   const [controlsOpen, setControlsOpen] = useState(false)
   const [scale, setScale] = useState(1)
   const [opacity, setOpacity] = useState(1)
-  const [chatOpen, setChatOpen] = useState(false)
+  const desktopPetChatWindow = typeof window !== 'undefined'
+    && new URLSearchParams(window.location.search).has('dshDesktopPetChat')
+  const [chatOpen, setChatOpen] = useState(desktopPetChatWindow)
   const [chatDraft, setChatDraft] = useState('')
+  const [approvalAnswering, setApprovalAnswering] = useState(false)
   const chatEndRef = useRef<HTMLDivElement>(null)
   const savePromiseRef = useRef<Promise<void> | null>(null)
   const [desktopPet, setDesktopPet] = useState(() => (
@@ -132,6 +149,12 @@ export function Live2DOverlay({
   const sessionsReady = useSessions((snapshot: SessionListState) => snapshot.phase === 'ready')
   const petChat = usePetChat(snapshot => snapshot)
   const running = desktopPet ? petChat.running : primaryRunning
+  const approvalKey = petChat.pendingApproval?.key ?? null
+  const separateDesktopPetChat = desktopPet && desktopShell
+
+  useEffect(() => {
+    setApprovalAnswering(false)
+  }, [approvalKey])
 
   useEffect(() => {
     if (model === null) {
@@ -204,6 +227,20 @@ export function Live2DOverlay({
   }, [chatOpen, desktopPet, desktopShell])
 
   useEffect(() => {
+    if (!desktopPet || !desktopShell) return
+    const onDesktopPetChatVisibility = (event: Event): void => {
+      const detail = (event as CustomEvent<unknown>).detail
+      if (typeof detail !== 'object' || detail === null || !('open' in detail)) return
+      const open = detail.open
+      if (typeof open === 'boolean') setChatOpen(open)
+    }
+    window.addEventListener('dsh-desktop-pet-chat-visibility', onDesktopPetChatVisibility)
+    return () => {
+      window.removeEventListener('dsh-desktop-pet-chat-visibility', onDesktopPetChatVisibility)
+    }
+  }, [desktopPet, desktopShell])
+
+  useEffect(() => {
     if (!chatOpen) return
     chatEndRef.current?.scrollIntoView({ block: 'end' })
   }, [chatOpen, petChat.messages])
@@ -252,6 +289,13 @@ export function Live2DOverlay({
     event.currentTarget.form?.requestSubmit()
   }
 
+  const submitPetApproval = (outcome: DesktopPetChatApprovalOutcome): void => {
+    setApprovalAnswering(true)
+    void answerPetApproval(outcome).then((accepted) => {
+      if (!accepted) setApprovalAnswering(false)
+    }).catch(() => { setApprovalAnswering(false) })
+  }
+
   if (!visible) {
     return (
       <button
@@ -272,6 +316,7 @@ export function Live2DOverlay({
       className={css.root}
       data-live2d-companion="true"
       data-desktop-pet={desktopPet || undefined}
+      data-desktop-pet-chat={desktopPetChatWindow || undefined}
       data-state={state}
       data-running={running || undefined}
       data-desktop-pet-chat-open={chatOpen || undefined}
@@ -331,7 +376,7 @@ export function Live2DOverlay({
         {model !== null && <span className={css.modelBadge}>{model.name}</span>}
       </div>
 
-      {desktopPet && (
+      {desktopPet && !desktopPetChatWindow && (
         <button
           type="button"
           className={css.chatToggle}
@@ -343,21 +388,31 @@ export function Live2DOverlay({
         </button>
       )}
 
-      {desktopPet && chatOpen && (
+      {desktopPet && chatOpen && (!separateDesktopPetChat || desktopPetChatWindow) && (
         <aside className={css.chatPanel} aria-label={t('chat.title')}>
           <header className={css.chatHeader}>
             <div>
               <p className={css.chatTitle}>{t('chat.title')}</p>
               <p className={css.chatIsolation}>{t('chat.isolated')}</p>
             </div>
-            <button
-              type="button"
-              className={css.chatClose}
-              aria-label={t('chat.close')}
-              onClick={() => { setChatOpen(false) }}
-            >
-              <IconCloseOutline16 size={16} />
-            </button>
+            <div className={css.chatHeaderActions}>
+              {desktopPetChatWindow && petChat.sessionId !== undefined && (
+                <div className={css.chatModelSelect}>
+                  {renderSlot('desktop-pet.model', {
+                    sessionId: petChat.sessionId,
+                    locked: petChat.pendingApproval !== null,
+                  })}
+                </div>
+              )}
+              <button
+                type="button"
+                className={css.chatClose}
+                aria-label={t('chat.close')}
+                onClick={() => { setChatOpen(false) }}
+              >
+                <IconCloseOutline16 size={16} />
+              </button>
+            </div>
           </header>
           <div className={css.chatMessages} aria-live="polite">
             {petChat.status === 'loading' && (
@@ -375,6 +430,46 @@ export function Live2DOverlay({
                 {message.text}
               </p>
             ))}
+            {petChat.pendingApproval !== null && (
+              <section className={css.chatApproval} data-approval-key={petChat.pendingApproval.key}>
+                <div className={css.chatApprovalHeader}>
+                  <span className={css.chatApprovalDot} aria-hidden="true" />
+                  {t('chat.approval.waiting')}
+                </div>
+                <div
+                  className={css.chatApprovalBody}
+                  data-approval-scroll=""
+                  tabIndex={0}
+                  role="group"
+                  aria-label={t('chat.approval.detailAria')}
+                >
+                  <p className={css.chatApprovalReason}>
+                    {petChat.pendingApproval.reason
+                      ?? t('chat.approval.escalation', { toolName: petChat.pendingApproval.toolName })}
+                  </p>
+                  {petChat.pendingApproval.command !== undefined && (
+                    <p className={css.chatApprovalCommand}>{petChat.pendingApproval.command}</p>
+                  )}
+                </div>
+                <div className={css.chatApprovalActions}>
+                  <Button
+                    variant="outline"
+                    className={css.chatApprovalReject}
+                    disabled={approvalAnswering}
+                    onClick={() => { submitPetApproval('rejected') }}
+                  >
+                    {t('chat.approval.reject')}
+                  </Button>
+                  <Button
+                    variant="primary"
+                    disabled={approvalAnswering}
+                    onClick={() => { submitPetApproval('allowed-once') }}
+                  >
+                    {t('chat.approval.allowOnce')}
+                  </Button>
+                </div>
+              </section>
+            )}
             {petChat.running && (
               <p className={css.chatThinking}>{t('chat.thinking')}</p>
             )}
@@ -392,7 +487,7 @@ export function Live2DOverlay({
               value={chatDraft}
               placeholder={t('chat.placeholder')}
               aria-label={t('chat.placeholder')}
-              disabled={!sessionsReady || petChat.sending}
+              disabled={!sessionsReady || petChat.sending || petChat.pendingApproval !== null}
               onChange={(event) => { setChatDraft(event.currentTarget.value) }}
               onKeyDown={onPetChatKeyDown}
             />
@@ -400,7 +495,7 @@ export function Live2DOverlay({
               type="submit"
               className={css.chatSend}
               aria-label={petChat.sending ? t('chat.sending') : t('chat.send')}
-              disabled={!sessionsReady || petChat.sending || chatDraft.trim() === ''}
+              disabled={!sessionsReady || petChat.sending || petChat.pendingApproval !== null || chatDraft.trim() === ''}
             >
               <IconSendOutline16 size={16} />
             </button>

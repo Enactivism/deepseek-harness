@@ -41,11 +41,14 @@ const props = (over: Partial<Live2DOverlayProps> = {}): Live2DOverlayProps => ({
     running: false
     sending: false
     error: null
+    pendingApproval: null
   }) => unknown) => selector({
-    status: 'idle', messages: [], running: false, sending: false, error: null,
+    status: 'idle', messages: [], running: false, sending: false, pendingApproval: null, error: null,
   })) as Live2DOverlayProps['usePetChat'],
   activatePetChat: vi.fn(() => Promise.resolve()),
   sendPetMessage: vi.fn(() => Promise.resolve(true)),
+  answerPetApproval: vi.fn(() => Promise.resolve(true)),
+  renderSlot: vi.fn(() => null),
   ...over,
 })
 
@@ -112,6 +115,35 @@ describe('Live2D companion right workspace', () => {
     fireEvent.keyDown(input, { key: 'Enter' })
     await waitFor(() => { expect(sendPetMessage).toHaveBeenCalledWith('你好，桌宠') })
     await waitFor(() => { expect((input as HTMLTextAreaElement).value).toBe('') })
+  })
+
+  it('shows the command approval and sends the selected decision', async () => {
+    window.history.replaceState({}, '', '/?dshDesktopPet=1')
+    const answerPetApproval = vi.fn(() => Promise.resolve(true))
+    const pendingApproval = {
+      key: 'a:approval-1', toolName: 'bash', reason: '需要执行一条命令', command: 'echo desktop pet',
+    }
+    render(<Live2DOverlay {...props({
+      answerPetApproval,
+      usePetChat: ((selector: (snapshot: {
+        status: 'ready'
+        messages: never[]
+        running: true
+        sending: false
+        pendingApproval: typeof pendingApproval
+        error: null
+      }) => unknown) => selector({
+        status: 'ready', messages: [], running: true, sending: false, pendingApproval, error: null,
+      })) as Live2DOverlayProps['usePetChat'],
+    })} />)
+
+    fireEvent.click(screen.getByRole('button', { name: '打开桌宠聊天' }))
+    expect(screen.getByText('等待审批')).toBeTruthy()
+    expect(screen.getByText('echo desktop pet')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '允许一次' }))
+    await waitFor(() => {
+      expect(answerPetApproval).toHaveBeenCalledWith('allowed-once')
+    })
   })
 
   it('resizes the desktop-pet canvas with the synchronized scale', async () => {

@@ -1,19 +1,20 @@
 /**
- * Model selection plugin, browser half — TWO entries over ONE per-session
+ * Model selection plugin, browser half — THREE entries over ONE per-session
  * directory owned by ModelDirectoryResolver (`ctx.modelDirectories`). The /model popupSelect
  * contribution and the composer's named `conversation.input.model` seat both
  * load the session's provider-grouped advisory directory (`session.models`)
  * and submit through `session.selectModel` via the same directory instance,
- * so the host-reported current selection is the single fact both surfaces echo
- * — a switch made in either entry is what the other shows next. Failures
- * ride each entry's own retry surface (popup shell error/retry; seat menu
- * inline error) without forking the state. Addressed subagent sessions expose
- * neither entry because those Agent-bound RPCs would activate persisted
- * history outside the direct-parent continuation path.
+ * while the native desktop-pet chat contributes a root-scoped third entry over
+ * the dedicated Session supplied by its owner. The host-reported current
+ * selection is the single fact all surfaces echo — a switch made in any entry
+ * is what the others show next. Failures ride each entry's own retry surface
+ * (popup shell error/retry; seat menu inline error) without forking the state.
+ * Addressed subagent sessions expose none of these entries because those Agent-bound
+ * RPCs would activate persisted history outside the direct-parent continuation path.
  */
 // Type-only: the carrier types, the forwarded Host-event face and the ctx.remote merge.
 import type { ModelSelection, SessionModels } from '@deepseek-ai/dsh-api-remotes/client'
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import type { CommandUiContract, SelectOption } from '@deepseek-ai/dsh-client-ui-commands/client'
 // Type-only: pulls the ui-conversation SlotMap merge (the input.model seat).
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -24,18 +25,38 @@ import type { ModelDirectoryState } from './directory.ts'
 import { ModelDirectoryResolver } from './service.ts'
 import type { ModelSelectInjected } from './slots.ts'
 import { ModelSelect } from './ModelSelect.tsx'
+import {
+  DesktopPetModelSelect,
+  type DesktopPetModelSelectInjected,
+  type DesktopPetModelSelectOwner,
+} from './DesktopPetModelSelect.tsx'
+
+export type {
+  DesktopPetModelSelectInjected,
+  DesktopPetModelSelectOwner,
+} from './DesktopPetModelSelect.tsx'
 import { en, zh, type ModelKey } from './locales.ts'
 
 export { ModelDirectory } from './directory.ts'
 export type { ModelDirectoryState } from './directory.ts'
 export { ModelDirectoryResolver } from './service.ts'
 export type { ModelSelectInjected } from './slots.ts'
+export { ModelSelect } from './ModelSelect.tsx'
 export type { ModelKey } from './locales.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
     /** The model selection surfaces' copy (/model popup + composer seat). */
     model: ModelKey
+  }
+
+  interface SlotMap {
+    /** Model selector rendered by the native desktop-pet chat window. */
+    'desktop-pet.model': {
+      kind: 'single'
+      scope: 'root'
+      owner: DesktopPetModelSelectOwner
+    }
   }
 }
 
@@ -172,5 +193,34 @@ export function apply(ctx: ClientContext): void {
         }
       },
     }, ModelSelect))
+  })
+
+  // The native desktop-pet chat is a root-scoped surface, so it supplies its
+  // dedicated Session id as owner data instead of borrowing the current-session
+  // standard kit used by the main composer.
+  ctx.slots.inject('desktop-pet.model', () => {
+    const fiber = ctx.inject(['modelDirectories'], (scope: ClientContext) => {
+      scope.effect(() => scope.slots.register({
+        name: 'desktop-pet.model',
+        locale: NS,
+        inject: (): DesktopPetModelSelectInjected => ({
+          selectionFor: (sessionId: SessionId): ModelSelectInjected => {
+            const directory = scope.modelDirectories.directoryFor(sessionId)
+            const available = scope.sessions.subagentAddress(sessionId) === undefined
+            return {
+              available,
+              directory: directory.store,
+              load: () => {
+                if (available) directory.load().catch(() => { /* surfaced on the store */ })
+              },
+              select: selection => available
+                ? directory.select(selection).then(() => true, () => false)
+                : Promise.resolve(false),
+            }
+          },
+        }),
+      }, DesktopPetModelSelect), 'ui-model-selection: desktop-pet model slot')
+    })
+    return () => { void fiber.dispose() }
   })
 }

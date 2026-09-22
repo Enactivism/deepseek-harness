@@ -362,10 +362,7 @@ HarnessWindow::HarnessWindow(QWidget *parent)
     connect(pet_page, &HarnessWebPage::desktopPetRequested,
             this, &HarnessWindow::toggleDesktopPet);
     connect(pet_page, &HarnessWebPage::desktopPetChatVisibilityChanged,
-            this, [this](bool open) {
-                pet_chat_open_ = open;
-                if (open) dragging_ = false;
-            });
+            this, &HarnessWindow::setDesktopPetChat);
     connect(pet_web_view_, &QWebEngineView::loadFinished,
             this, &HarnessWindow::preparePetPage);
     pet_pointer_timer_->setInterval(kPetPointerPollIntervalMs);
@@ -374,6 +371,42 @@ HarnessWindow::HarnessWindow(QWidget *parent)
             this, &HarnessWindow::updateDesktopPetPointer);
     pet_layout->addWidget(pet_web_view_);
     pet_window_->hide();
+
+    chat_window_ = new QWidget(this, Qt::Window | Qt::WindowStaysOnTopHint);
+    chat_window_->setWindowTitle(QStringLiteral("桌宠聊天"));
+    chat_window_->setMinimumSize(QSize(380, 520));
+    chat_window_->resize(QSize(460, 680));
+    chat_window_->setStyleSheet("background: #10151e;");
+    chat_window_->setMouseTracking(true);
+    auto *chat_layout = new QVBoxLayout(chat_window_);
+    chat_layout->setContentsMargins(0, 0, 0, 0);
+    chat_layout->setSpacing(0);
+    chat_web_view_ = new QWebEngineView(chat_window_);
+    chat_web_view_->setMouseTracking(true);
+    chat_web_view_->setStyleSheet("border: none; background: #10151e;");
+    chat_web_view_->settings()->setAttribute(QWebEngineSettings::WebGLEnabled, true);
+    chat_web_view_->settings()->setAttribute(QWebEngineSettings::Accelerated2dCanvasEnabled, true);
+    auto *chat_page = new HarnessWebPage(chat_web_view_);
+    chat_page->profile()->setHttpUserAgent(
+        chat_page->profile()->httpUserAgent() + QStringLiteral(" DeepSeekHarnessQt/1"));
+    QWebEngineScript chat_script;
+    chat_script.setName(QStringLiteral("dsh-desktop-pet-chat-surface"));
+    chat_script.setInjectionPoint(QWebEngineScript::DocumentCreation);
+    chat_script.setWorldId(QWebEngineScript::MainWorld);
+    chat_script.setSourceCode(QString::fromUtf8(kPetPageScript));
+    chat_page->scripts().insert(chat_script);
+    chat_web_view_->setPage(chat_page);
+    chat_page->setBackgroundColor(QColor("#10151e"));
+    chat_web_view_->installEventFilter(this);
+    chat_window_->installEventFilter(this);
+    connect(chat_page, &HarnessWebPage::desktopPetRequested,
+            this, &HarnessWindow::toggleDesktopPet);
+    connect(chat_page, &HarnessWebPage::desktopPetChatVisibilityChanged,
+            this, &HarnessWindow::setDesktopPetChat);
+    connect(chat_web_view_, &QWebEngineView::loadFinished,
+            this, &HarnessWindow::preparePetChatPage);
+    chat_layout->addWidget(chat_web_view_);
+    chat_window_->hide();
 
     state_view_->setObjectName("stateView");
     auto *state_outer_layout = new QVBoxLayout(state_view_);
@@ -548,6 +581,7 @@ HarnessWindow::~HarnessWindow() {
     qApp->removeEventFilter(this);
     stopHarness();
     delete pet_window_;
+    delete chat_window_;
 }
 
 void HarnessWindow::startHarness() {
@@ -659,7 +693,6 @@ void HarnessWindow::toggleDesktopPet() {
 void HarnessWindow::setDesktopPet(bool enabled) {
     if (desktop_pet_ == enabled) return;
     desktop_pet_ = enabled;
-    pet_chat_open_ = false;
     scale_wheel_remainder_ = 0;
     if (enabled) {
         pet_window_->resize(kPetBaseSize);
@@ -675,9 +708,30 @@ void HarnessWindow::setDesktopPet(bool enabled) {
     } else {
         dragging_ = false;
         pet_pointer_timer_->stop();
+        setDesktopPetChat(false);
         pet_window_->hide();
         pet_web_view_->stop();
     }
+}
+
+void HarnessWindow::setDesktopPetChat(bool open) {
+    if (!desktop_pet_ || chat_window_ == nullptr || chat_web_view_ == nullptr) {
+        if (!open && chat_window_ != nullptr) chat_window_->hide();
+        return;
+    }
+    if (!open) {
+        chat_window_->hide();
+        notifyDesktopPetChatVisibility(false);
+        return;
+    }
+
+    const auto chat_url = QUrl(QStringLiteral("%1/?dshDesktopPet=1&dshDesktopPetChat=1")
+                                   .arg(kHarnessUrl));
+    if (chat_web_view_->url() != chat_url) chat_web_view_->setUrl(chat_url);
+    chat_window_->show();
+    chat_window_->raise();
+    chat_window_->activateWindow();
+    notifyDesktopPetChatVisibility(true);
 }
 
 void HarnessWindow::preparePetPage(bool ok) {
@@ -700,6 +754,27 @@ void HarnessWindow::preparePetPage(bool ok) {
     updateDesktopPetPointer();
 }
 
+void HarnessWindow::preparePetChatPage(bool ok) {
+    if (!desktop_pet_ || !ok || chat_web_view_ == nullptr) return;
+    chat_web_view_->page()->runJavaScript(QString::fromUtf8(kPetPageScript));
+    if (chat_window_ != nullptr && chat_window_->isVisible()) {
+        notifyDesktopPetChatVisibility(true);
+    }
+}
+
+void HarnessWindow::notifyDesktopPetChatVisibility(bool open) {
+    const auto script = QStringLiteral(
+        "window.dispatchEvent(new CustomEvent('dsh-desktop-pet-chat-visibility', "
+        "{detail:{open:%1}}));")
+        .arg(open ? QStringLiteral("true") : QStringLiteral("false"));
+    if (pet_web_view_ != nullptr) {
+        pet_web_view_->page()->runJavaScript(script, QWebEngineScript::MainWorld);
+    }
+    if (chat_web_view_ != nullptr) {
+        chat_web_view_->page()->runJavaScript(script, QWebEngineScript::MainWorld);
+    }
+}
+
 void HarnessWindow::updateDesktopPetPointer() {
     if (!desktop_pet_
         || !pet_window_->isVisible()
@@ -713,6 +788,10 @@ void HarnessWindow::updateDesktopPetPointer() {
 }
 
 bool HarnessWindow::eventFilter(QObject *watched, QEvent *event) {
+    if (watched == chat_window_ && event->type() == QEvent::Close) {
+        setDesktopPetChat(false);
+        return true;
+    }
     const auto *widget = qobject_cast<const QWidget *>(watched);
     QPoint global_position;
     const auto *mouse_event = dynamic_cast<const QMouseEvent *>(event);
@@ -730,9 +809,9 @@ bool HarnessWindow::eventFilter(QObject *watched, QEvent *event) {
         && desktop_pet::isChatInteractionArea(
             pet_window_->mapFromGlobal(global_position),
             pet_window_->size(),
-            pet_chat_open_,
+            false,
             kPetChatControlArea);
-    if (event->type() == QEvent::Wheel && is_pet_target && !pet_chat_open_) {
+    if (event->type() == QEvent::Wheel && is_pet_target && !chat_interaction) {
         auto *wheel = static_cast<QWheelEvent *>(event);
         const int angle_delta = wheel->angleDelta().y();
         if (angle_delta != 0) {
@@ -851,6 +930,7 @@ void HarnessWindow::updateStatus(const QString &message) {
 }
 
 void HarnessWindow::closeEvent(QCloseEvent *event) {
+    setDesktopPetChat(false);
     if (pet_window_ != nullptr) pet_window_->hide();
     stopHarness();
     event->accept();
