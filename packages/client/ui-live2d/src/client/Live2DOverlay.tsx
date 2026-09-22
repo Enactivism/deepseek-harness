@@ -16,6 +16,7 @@ import {
   IconSettingsOutline16,
   IconSparkle16,
   IconTrashOutline16,
+  MarkdownText,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime, TranslateNS,
@@ -422,13 +423,21 @@ export function Live2DOverlay({
               <p className={css.chatNotice}>{t('chat.empty')}</p>
             )}
             {petChat.messages.map(message => (
-              <p
-                key={message.id}
-                className={message.role === 'user' ? css.chatMessageUser : css.chatMessageAssistant}
-                data-streaming={message.streaming || undefined}
-              >
-                {message.text}
-              </p>
+              message.role === 'user'
+                ? (
+                  <p key={message.id} className={css.chatMessageUser}>
+                    {message.text}
+                  </p>
+                )
+                : (
+                  <div
+                    key={message.id}
+                    className={css.chatMessageAssistant}
+                    data-streaming={message.streaming || undefined}
+                  >
+                    <MarkdownText text={message.text} streaming={message.streaming === true} />
+                  </div>
+                )
             ))}
             {petChat.pendingApproval !== null && (
               <section className={css.chatApproval} data-approval-key={petChat.pendingApproval.key}>

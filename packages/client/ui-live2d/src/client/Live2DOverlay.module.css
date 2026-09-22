@@ -631,7 +631,6 @@
 .chatMessageAssistant {
   max-width: 82%;
   padding: 7px 9px;
-  white-space: pre-wrap;
   overflow-wrap: anywhere;
   border-radius: 11px;
   font-size: 11px;
@@ -640,6 +639,7 @@
 
 .chatMessageUser {
   align-self: flex-end;
+  white-space: pre-wrap;
   color: var(--dsw-alias-label-primary-foreground);
   background: var(--live2d-accent);
   border-bottom-right-radius: 4px;

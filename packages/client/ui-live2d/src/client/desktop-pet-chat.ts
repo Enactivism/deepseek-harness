@@ -19,7 +19,7 @@ export interface DesktopPetChatMessage {
   id: string
   /** Speaker displayed by the compact panel. */
   role: 'user' | 'assistant'
-  /** Plain text extracted from the Session projection. */
+  /** Message text extracted from the Session projection. */
   text: string
   /** Present only for the assistant output still streaming. */
   streaming?: true

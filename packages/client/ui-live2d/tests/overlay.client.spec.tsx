@@ -117,6 +117,34 @@ describe('Live2D companion right workspace', () => {
     await waitFor(() => { expect((input as HTMLTextAreaElement).value).toBe('') })
   })
 
+  it('renders settled assistant Markdown, including display math and fenced code', () => {
+    window.history.replaceState({}, '', '/?dshDesktopPet=1')
+    const messages = [{
+      id: 'assistant-1' as const,
+      role: 'assistant' as const,
+      text: '平方公式：\n\n$$\nx^2\n$$\n\n```ts\nconst answer = 42\n```',
+    }]
+    render(<Live2DOverlay {...props({
+      usePetChat: ((selector: (snapshot: {
+        status: 'ready'
+        messages: typeof messages
+        running: false
+        sending: false
+        pendingApproval: null
+        error: null
+      }) => unknown) => selector({
+        status: 'ready', messages, running: false, sending: false, pendingApproval: null, error: null,
+      })) as Live2DOverlayProps['usePetChat'],
+    })} />)
+
+    fireEvent.click(screen.getByRole('button', { name: '打开桌宠聊天' }))
+    const panel = screen.getByRole('complementary', { name: '桌宠聊天' })
+    expect(panel.querySelector('.katex-display')).not.toBeNull()
+    const codeBlock = panel.querySelector('.md-code-block')
+    expect(codeBlock).not.toBeNull()
+    expect(codeBlock?.textContent).toContain('const answer = 42')
+  })
+
   it('shows the command approval and sends the selected decision', async () => {
     window.history.replaceState({}, '', '/?dshDesktopPet=1')
     const answerPetApproval = vi.fn(() => Promise.resolve(true))
