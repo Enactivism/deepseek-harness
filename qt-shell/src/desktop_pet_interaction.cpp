@@ -41,13 +41,11 @@ QRect wheelResizedGeometry(const QRect &geometry,
     return {center_x - width / 2, bottom - height, width, height};
 }
 
-bool isChatInteractionArea(const QPoint &position,
-                           const QSize &window_size,
-                           bool chat_open,
-                           int closed_button_area) {
-    if (chat_open) return true;
-    return position.x() >= window_size.width() - closed_button_area
-        && position.y() >= window_size.height() - closed_button_area;
+bool isPetControlArea(const QPoint &position,
+                      const QSize &window_size,
+                      const QSize &control_area) {
+    return position.x() >= window_size.width() - control_area.width()
+        && position.y() >= window_size.height() - control_area.height();
 }
 
 QString desktopPetScaleScript(double scale) {

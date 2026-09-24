@@ -25,11 +25,10 @@ QRect wheelResizedGeometry(const QRect &geometry,
                            const QSize &step_size,
                            const QSize &minimum_size);
 
-/** Whether the point belongs to Web chat instead of native pet gestures. */
-bool isChatInteractionArea(const QPoint &position,
-                           const QSize &window_size,
-                           bool chat_open,
-                           int closed_button_area);
+/** Whether the point belongs to Web controls instead of native pet gestures. */
+bool isPetControlArea(const QPoint &position,
+                      const QSize &window_size,
+                      const QSize &control_area);
 
 /** Build the page event that applies an absolute scale to the desktop-pet model. */
 QString desktopPetScaleScript(double scale);

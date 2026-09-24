@@ -17,6 +17,7 @@ import { ZH_BROWSER_LOCALE, saveFailureShot } from './support.ts'
 const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/desktop-pet-chat', import.meta.url))
 const UI_EXPECTED = join(SNAPSHOT_DIR, 'ui.expected.md')
 const CHAT_WINDOW_EXPECTED = join(SNAPSHOT_DIR, 'chat-window.expected.md')
+const GALGAME_CHOOSER_EXPECTED = join(SNAPSHOT_DIR, 'galgame-chooser.expected.md')
 const MODE = webSnapshotMode()
 const MAIN_ID = SessionId('desktop-pet-main')
 const PET_ID = SessionId('desktop-pet-chat')
@@ -127,7 +128,29 @@ describe('web e2e: isolated desktop-pet chat', () => {
     expect(chatTripwire.pageErrors).toEqual([])
   }, 60_000)
 
+  it('opens Galgame in the pet and standalone chat documents', async () => {
+    onTestFailed(() => saveFailureShot(petPage, 'web-e2e-desktop-pet-galgame'))
+    await petPage.getByRole('button', { name: '进入 Galgame 模式' }).click()
+    const petPanel = petPage.getByRole('complementary', { name: 'Galgame' })
+    await petPanel.getByRole('button', { name: /自由模式/ }).waitFor()
+    const chatPanel = chatPage.getByRole('complementary', { name: 'Galgame' })
+    await chatPanel.getByRole('button', { name: /剧情模式/ }).waitFor()
+    expect(await chatPage.evaluate(() => localStorage.getItem('dsh.live2d.galgame-mode')))
+      .toBe('choose')
+
+    const snapshot = await captureStableAria(
+      chatPage,
+      '[aria-label="Galgame"]',
+      scaffold.workspaceCwd,
+    )
+    await compareOrRefreshGolden(GALGAME_CHOOSER_EXPECTED, snapshot, MODE)
+    expect(petTripwire.pageErrors).toEqual([])
+    expect(chatTripwire.pageErrors).toEqual([])
+  }, 60_000)
+
   it('keeps the fixture inventory closed', async () => {
-    await assertFixtureInventory(SNAPSHOT_DIR, ['chat-window.expected.md', 'ui.expected.md'])
+    await assertFixtureInventory(SNAPSHOT_DIR, [
+      'chat-window.expected.md', 'galgame-chooser.expected.md', 'ui.expected.md',
+    ])
   })
 })

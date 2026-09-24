@@ -1,8 +1,8 @@
 - complementary "桌宠聊天":
   - paragraph: 桌宠聊天
   - paragraph: 独立会话，不影响主界面聊天
-  - button "选择模型，当前 DeepSeek-V4-Flash":
-    - text: DeepSeek-V4-Flash
+  - button "选择模型":
+    - text: 选择模型
     - img
   - button "关闭桌宠聊天":
     - img

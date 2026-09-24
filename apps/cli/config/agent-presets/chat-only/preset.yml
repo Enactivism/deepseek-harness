@@ -1,0 +1,3 @@
+name: 纯聊天
+description: 只保留对话，不提供工具或运行环境上下文。
+order: 5

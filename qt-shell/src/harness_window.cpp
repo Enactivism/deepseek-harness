@@ -56,7 +56,7 @@ constexpr int kPageBootInspectionDelayMs = 1200;
 constexpr int kPageRetryDelayMs = 2000;
 constexpr int kMaxPageRetries = 3;
 constexpr int kPetPointerPollIntervalMs = 16;
-constexpr int kPetChatControlArea = 64;
+const QSize kPetControlArea(160, 64);
 const QSize kPetBaseSize(360, 480);
 const QSize kPetResizeStep(24, 32);
 const QSize kPetMinimumSize(240, 320);
@@ -805,13 +805,12 @@ bool HarnessWindow::eventFilter(QObject *watched, QEvent *event) {
             || watched == pet_web_view_
             || (widget != nullptr && pet_window_ != nullptr && pet_window_->isAncestorOf(widget))
             || inside_pet_window);
-    const bool chat_interaction = is_pet_target && mouse_event != nullptr
-        && desktop_pet::isChatInteractionArea(
+    const bool control_interaction = is_pet_target && mouse_event != nullptr
+        && desktop_pet::isPetControlArea(
             pet_window_->mapFromGlobal(global_position),
             pet_window_->size(),
-            false,
-            kPetChatControlArea);
-    if (event->type() == QEvent::Wheel && is_pet_target && !chat_interaction) {
+            kPetControlArea);
+    if (event->type() == QEvent::Wheel && is_pet_target && !control_interaction) {
         auto *wheel = static_cast<QWheelEvent *>(event);
         const int angle_delta = wheel->angleDelta().y();
         if (angle_delta != 0) {
@@ -829,7 +828,7 @@ bool HarnessWindow::eventFilter(QObject *watched, QEvent *event) {
             return true;
         }
     }
-    if ((!chat_interaction && is_pet_target) || (desktop_pet_ && dragging_)) {
+    if ((!control_interaction && is_pet_target) || (desktop_pet_ && dragging_)) {
         if (event->type() == QEvent::MouseButtonDblClick) {
             const auto *mouse = static_cast<QMouseEvent *>(event);
             if (is_pet_target && mouse->button() == Qt::LeftButton) {

@@ -36,10 +36,15 @@ export interface ISessions {
   readonly searchResultLimit: number
   /**
    * Create a session without selecting it.
-   * @param opts - optional Workspace, directory, or caller-preallocated id.
+   * @param opts - optional Workspace, directory, caller-preallocated id, and agent-preset id.
    * @returns the new session id after it is addressable through {@link binding}.
    */
-  create(opts?: { workspaceId?: WorkspaceId; cwd?: string; sessionId?: SessionId }): Promise<SessionId>
+  create(opts?: {
+    workspaceId?: WorkspaceId
+    cwd?: string
+    sessionId?: SessionId
+    agentPreset?: string
+  }): Promise<SessionId>
   /**
    * Select a session as current.
    * @param id - session id (must exist in the list; unknown ids fail loud).

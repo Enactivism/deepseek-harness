@@ -46,12 +46,14 @@ int main() {
     expect(minimum == QRect(160, 360, 240, 320),
            "shrinking must stop at the minimum window size");
 
-    expect(desktop_pet::isChatInteractionArea({40, 40}, {360, 480}, true, 64),
-           "an open chat panel must receive interaction across the pet window");
-    expect(desktop_pet::isChatInteractionArea({320, 440}, {360, 480}, false, 64),
-           "the closed chat button area must receive interaction");
-    expect(!desktop_pet::isChatInteractionArea({100, 100}, {360, 480}, false, 64),
-           "the model surface must keep native pet gestures while chat is closed");
+    expect(desktop_pet::isPetControlArea({250, 440}, {360, 480}, {160, 64}),
+           "the Galgame button must receive click and double-click events");
+    expect(desktop_pet::isPetControlArea({320, 440}, {360, 480}, {160, 64}),
+           "the chat button must receive click and double-click events");
+    expect(!desktop_pet::isPetControlArea({190, 440}, {360, 480}, {160, 64}),
+           "the model surface must keep native pet gestures outside the controls");
+    expect(!desktop_pet::isPetControlArea({250, 400}, {360, 480}, {160, 64}),
+           "the model surface above the controls must keep native pet gestures");
 
     const QString scale_script = desktop_pet::desktopPetScaleScript(1.066667);
     expect(scale_script.contains(QStringLiteral("dsh-desktop-pet-scale"))

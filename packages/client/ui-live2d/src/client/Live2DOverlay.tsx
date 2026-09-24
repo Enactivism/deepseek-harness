@@ -22,11 +22,15 @@ import type {
   InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime, TranslateNS,
 } from '@deepseek-ai/dsh-client-ui-slots'
 import type {
+  DesktopPetChatMode,
   DesktopPetChatApprovalOutcome,
   DesktopPetChatView,
 } from './desktop-pet-chat.ts'
 import type { Live2DKey } from './locales.ts'
 import { buildModelBundle, ModelImportError, type ModelBundle } from './model-files.ts'
+import {
+  GALGAME_CONTROL_PREFIX, isGalgameControlMessage, parseGalgameReply,
+} from './galgame.ts'
 import { mountLive2D } from './renderer.ts'
 import { loadModelBundle, saveModelBundle } from './model-store.ts'
 import { broadcastModelBundle, subscribeToModelTransfer } from './model-transfer.ts'
@@ -39,13 +43,13 @@ export interface DesktopPetChatInjected {
     petChat: ObservableSnapshot<DesktopPetChatView>
   }
   /** Restore or create the desktop pet's isolated Session. */
-  activatePetChat: () => Promise<void>
+  activatePetChat: (mode?: DesktopPetChatMode) => Promise<void>
   /**
    * Send one text message to the desktop pet's isolated Session.
    * @param text - trimmed non-empty message.
    * @returns whether the Host accepted the message.
    */
-  sendPetMessage: (text: string) => Promise<boolean>
+  sendPetMessage: (text: string, mode?: DesktopPetChatMode) => Promise<boolean>
   /**
    * Answer the approval currently blocking the desktop pet's Session.
    * @param outcome - one-shot allow or reject decision.
@@ -62,6 +66,10 @@ export type Live2DOverlayProps =
   & InjectFace<DesktopPetChatInjected>
 
 type LoadState = 'empty' | 'loading' | 'ready' | 'error'
+type GalgameMode = 'choose' | 'free' | 'story'
+
+const GALGAME_MODE_STORAGE_KEY = 'dsh.live2d.galgame-mode'
+const GALGAME_STORY_ACTIVE_STORAGE_KEY = 'dsh.live2d.galgame-story-active'
 
 const DESKTOP_PET_SCALE_MIN = 2 / 3
 const DESKTOP_PET_BASE_WIDTH = 360
@@ -69,6 +77,43 @@ const DESKTOP_PET_BASE_HEIGHT = 480
 const WORKSPACE_SCALE_MIN = 0.7
 const WORKSPACE_SCALE_MAX = 1.35
 const WORKSPACE_SCALE_STEP = 0.05
+
+function readGalgameMode(): GalgameMode | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const value = window.localStorage.getItem(GALGAME_MODE_STORAGE_KEY)
+    return value === 'choose' || value === 'free' || value === 'story' ? value : null
+  } catch {
+    return null
+  }
+}
+
+function writeGalgameMode(mode: GalgameMode | null): void {
+  try {
+    if (mode === null) window.localStorage.removeItem(GALGAME_MODE_STORAGE_KEY)
+    else window.localStorage.setItem(GALGAME_MODE_STORAGE_KEY, mode)
+  } catch {
+    // The native chat page can still be used when browser storage is unavailable.
+  }
+}
+
+function readGalgameStoryActive(): boolean {
+  if (typeof window === 'undefined') return false
+  try {
+    return window.localStorage.getItem(GALGAME_STORY_ACTIVE_STORAGE_KEY) === 'true'
+  } catch {
+    return false
+  }
+}
+
+function writeGalgameStoryActive(active: boolean): void {
+  try {
+    if (active) window.localStorage.setItem(GALGAME_STORY_ACTIVE_STORAGE_KEY, 'true')
+    else window.localStorage.removeItem(GALGAME_STORY_ACTIVE_STORAGE_KEY)
+  } catch {
+    // Story mode still works in the current page when browser storage is unavailable.
+  }
+}
 
 /** Translate structured import/runtime failures at the UI boundary. */
 function errorText(error: unknown, t: TranslateNS<'live2d'>): string {
@@ -135,6 +180,9 @@ export function Live2DOverlay({
     && new URLSearchParams(window.location.search).has('dshDesktopPetChat')
   const [chatOpen, setChatOpen] = useState(desktopPetChatWindow)
   const [chatDraft, setChatDraft] = useState('')
+  const [galgameMode, setGalgameMode] = useState<GalgameMode | null>(() => readGalgameMode())
+  const [galgameStoryActive, setGalgameStoryActive] = useState(() => readGalgameStoryActive())
+  const [galgameSending, setGalgameSending] = useState(false)
   const [approvalAnswering, setApprovalAnswering] = useState(false)
   const chatEndRef = useRef<HTMLDivElement>(null)
   const savePromiseRef = useRef<Promise<void> | null>(null)
@@ -152,10 +200,26 @@ export function Live2DOverlay({
   const running = desktopPet ? petChat.running : primaryRunning
   const approvalKey = petChat.pendingApproval?.key ?? null
   const separateDesktopPetChat = desktopPet && desktopShell
+  const petChatMode: DesktopPetChatMode = galgameMode === null ? 'chat' : 'galgame'
+  const lastPetMessage = petChat.messages[petChat.messages.length - 1]
+  const lastStoryReply = lastPetMessage?.role === 'assistant'
+    ? parseGalgameReply(lastPetMessage.text)
+    : null
 
   useEffect(() => {
     setApprovalAnswering(false)
   }, [approvalKey])
+
+  useEffect(() => {
+    const syncGalgameMode = (event: StorageEvent): void => {
+      if (event.key !== null && event.key !== GALGAME_MODE_STORAGE_KEY
+        && event.key !== GALGAME_STORY_ACTIVE_STORAGE_KEY) return
+      setGalgameMode(readGalgameMode())
+      setGalgameStoryActive(readGalgameStoryActive())
+    }
+    window.addEventListener('storage', syncGalgameMode)
+    return () => { window.removeEventListener('storage', syncGalgameMode) }
+  }, [])
 
   useEffect(() => {
     if (model === null) {
@@ -219,8 +283,8 @@ export function Live2DOverlay({
 
   useEffect(() => {
     if (!desktopPet || !chatOpen || !sessionsReady) return
-    void activatePetChat().catch(() => undefined)
-  }, [activatePetChat, chatOpen, desktopPet, sessionsReady])
+    void activatePetChat(petChatMode).catch(() => undefined)
+  }, [activatePetChat, chatOpen, desktopPet, petChatMode, sessionsReady])
 
   useEffect(() => {
     if (!desktopPet || !desktopShell) return
@@ -244,7 +308,7 @@ export function Live2DOverlay({
   useEffect(() => {
     if (!chatOpen) return
     chatEndRef.current?.scrollIntoView({ block: 'end' })
-  }, [chatOpen, petChat.messages])
+  }, [chatOpen, galgameMode, petChat.messages])
 
   const openPicker = (): void => { fileInputRef.current?.click() }
 
@@ -279,7 +343,7 @@ export function Live2DOverlay({
     event.preventDefault()
     const text = chatDraft.trim()
     if (text === '') return
-    void sendPetMessage(text).then((accepted) => {
+    void sendPetMessage(text, 'chat').then((accepted) => {
       if (accepted) setChatDraft('')
     }).catch(() => undefined)
   }
@@ -295,6 +359,63 @@ export function Live2DOverlay({
     void answerPetApproval(outcome).then((accepted) => {
       if (!accepted) setApprovalAnswering(false)
     }).catch(() => { setApprovalAnswering(false) })
+  }
+
+  const setGalgameScreen = (mode: GalgameMode | null): void => {
+    setGalgameMode(mode)
+    writeGalgameMode(mode)
+  }
+
+  const markGalgameStoryActive = (active: boolean): void => {
+    setGalgameStoryActive(active)
+    writeGalgameStoryActive(active)
+  }
+
+  const submitGalgameMessage = (text: string, onAccepted?: () => void): void => {
+    if (galgameSending) return
+    setGalgameSending(true)
+    void sendPetMessage(text, 'galgame')
+      .then((accepted) => {
+        if (accepted) onAccepted?.()
+      })
+      .catch(() => undefined)
+      .finally(() => { setGalgameSending(false) })
+  }
+
+  const submitGalgameControl = (text: string, onAccepted?: () => void): void => {
+    submitGalgameMessage(`${GALGAME_CONTROL_PREFIX}${text}`, onAccepted)
+  }
+
+  const selectGalgameMode = (mode: 'free' | 'story'): void => {
+    if (petChat.status !== 'ready' || galgameMode === mode || galgameSending || petChat.running
+      || petChat.sending || petChat.pendingApproval !== null) return
+    setGalgameScreen(mode)
+    if (mode === 'free') {
+      if (galgameStoryActive) {
+        submitGalgameControl(t('game.freePrompt'), () => { markGalgameStoryActive(false) })
+      }
+      return
+    }
+    markGalgameStoryActive(true)
+    const hasCurrentChoices = lastStoryReply !== null && lastStoryReply.choices !== null
+    if (hasCurrentChoices) return
+    const promptKey = petChat.messages.length === 0 ? 'game.storyPrompt' : 'game.continuePrompt'
+    submitGalgameControl(t(promptKey))
+  }
+
+  const submitStoryChoice = (choice: string): void => {
+    submitGalgameMessage(choice)
+  }
+
+  const retryStoryChoices = (): void => {
+    submitGalgameControl(t('game.retryPrompt'))
+  }
+
+  const exitGalgame = (): void => {
+    setGalgameScreen(null)
+    if (galgameStoryActive) {
+      submitGalgameControl(t('game.freePrompt'), () => { markGalgameStoryActive(false) })
+    }
   }
 
   if (!visible) {
@@ -378,25 +499,58 @@ export function Live2DOverlay({
       </div>
 
       {desktopPet && !desktopPetChatWindow && (
-        <button
-          type="button"
-          className={css.chatToggle}
-          aria-label={chatOpen ? t('chat.close') : t('chat.open')}
-          aria-expanded={chatOpen}
-          onClick={() => { setChatOpen(open => !open) }}
-        >
-          {chatOpen ? <IconCloseOutline16 size={18} /> : <IconNewChatOutline16 size={18} />}
-        </button>
+        <>
+          <button
+            type="button"
+            className={css.galgameOpenButton}
+            aria-label={t('game.open')}
+            onClick={() => {
+              setGalgameScreen('choose')
+              setChatOpen(true)
+            }}
+          >
+            Galgame
+          </button>
+          <button
+            type="button"
+            className={css.chatToggle}
+            aria-label={chatOpen ? t('chat.close') : t('chat.open')}
+            aria-expanded={chatOpen}
+            onClick={() => { setChatOpen(open => !open) }}
+          >
+            {chatOpen ? <IconCloseOutline16 size={18} /> : <IconNewChatOutline16 size={18} />}
+          </button>
+        </>
       )}
 
       {desktopPet && chatOpen && (!separateDesktopPetChat || desktopPetChatWindow) && (
-        <aside className={css.chatPanel} aria-label={t('chat.title')}>
+        <aside
+          className={css.chatPanel}
+          aria-label={galgameMode === null ? t('chat.title') : t('game.title')}
+          data-galgame-mode={galgameMode ?? undefined}
+        >
           <header className={css.chatHeader}>
             <div>
-              <p className={css.chatTitle}>{t('chat.title')}</p>
-              <p className={css.chatIsolation}>{t('chat.isolated')}</p>
+              <p className={css.chatTitle}>{galgameMode === null ? t('chat.title') : t('game.title')}</p>
+              <p className={css.chatIsolation}>
+                {galgameMode === null
+                  ? t('chat.isolated')
+                  : galgameMode === 'choose' ? t('game.intro') : t(`game.${galgameMode}`)}
+              </p>
             </div>
             <div className={css.chatHeaderActions}>
+              {galgameMode !== null && (
+                <button
+                  type="button"
+                  className={css.galgameHeaderButton}
+                  aria-label={t('game.exit')}
+                  disabled={galgameSending || petChat.running || petChat.sending
+                    || petChat.pendingApproval !== null}
+                  onClick={exitGalgame}
+                >
+                  {t('game.exit')}
+                </button>
+              )}
               {desktopPetChatWindow && petChat.sessionId !== undefined && (
                 <div className={css.chatModelSelect}>
                   {renderSlot('desktop-pet.model', {
@@ -415,100 +569,191 @@ export function Live2DOverlay({
               </button>
             </div>
           </header>
-          <div className={css.chatMessages} aria-live="polite">
-            {petChat.status === 'loading' && (
-              <p className={css.chatNotice}>{t('chat.loading')}</p>
-            )}
-            {petChat.status === 'ready' && petChat.messages.length === 0 && (
-              <p className={css.chatNotice}>{t('chat.empty')}</p>
-            )}
-            {petChat.messages.map(message => (
-              message.role === 'user'
-                ? (
-                  <p key={message.id} className={css.chatMessageUser}>
-                    {message.text}
-                  </p>
-                )
-                : (
-                  <div
-                    key={message.id}
-                    className={css.chatMessageAssistant}
-                    data-streaming={message.streaming || undefined}
-                  >
-                    <MarkdownText text={message.text} streaming={message.streaming === true} />
-                  </div>
-                )
-            ))}
-            {petChat.pendingApproval !== null && (
-              <section className={css.chatApproval} data-approval-key={petChat.pendingApproval.key}>
-                <div className={css.chatApprovalHeader}>
-                  <span className={css.chatApprovalDot} aria-hidden="true" />
-                  {t('chat.approval.waiting')}
-                </div>
-                <div
-                  className={css.chatApprovalBody}
-                  data-approval-scroll=""
-                  tabIndex={0}
-                  role="group"
-                  aria-label={t('chat.approval.detailAria')}
+          {galgameMode === 'choose'
+            ? (
+              <div className={css.galgameChooser}>
+                <button
+                  type="button"
+                  className={css.galgameModeCard}
+                  disabled={petChat.status !== 'ready' || galgameSending || petChat.running
+                    || petChat.sending || petChat.pendingApproval !== null}
+                  onClick={() => { selectGalgameMode('free') }}
                 >
-                  <p className={css.chatApprovalReason}>
-                    {petChat.pendingApproval.reason
-                      ?? t('chat.approval.escalation', { toolName: petChat.pendingApproval.toolName })}
-                  </p>
-                  {petChat.pendingApproval.command !== undefined && (
-                    <p className={css.chatApprovalCommand}>{petChat.pendingApproval.command}</p>
+                  <span className={css.galgameModeName}>{t('game.free')}</span>
+                  <span className={css.galgameModeDescription}>{t('game.freeDescription')}</span>
+                </button>
+                <button
+                  type="button"
+                  className={css.galgameModeCard}
+                  disabled={petChat.status !== 'ready' || galgameSending || petChat.running
+                    || petChat.sending || petChat.pendingApproval !== null}
+                  onClick={() => { selectGalgameMode('story') }}
+                >
+                  <span className={css.galgameModeName}>{t('game.story')}</span>
+                  <span className={css.galgameModeDescription}>{t('game.storyDescription')}</span>
+                </button>
+              </div>
+            )
+            : (
+              <>
+                {galgameMode !== null && (
+                  <div className={css.galgameModeTabs} role="tablist" aria-label={t('game.title')}>
+                    {(['free', 'story'] as const).map(mode => (
+                      <button
+                        key={mode}
+                        type="button"
+                        role="tab"
+                        aria-selected={galgameMode === mode}
+                        className={css.galgameModeTab}
+                        disabled={galgameSending || petChat.running || petChat.sending || petChat.pendingApproval !== null}
+                        onClick={() => { selectGalgameMode(mode) }}
+                      >
+                        {t(`game.${mode}`)}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <div className={css.chatMessages} aria-live="polite">
+                  {petChat.status === 'loading' && (
+                    <p className={css.chatNotice}>{t('chat.loading')}</p>
                   )}
+                  {petChat.status === 'ready' && petChat.messages.length === 0 && (
+                    <p className={css.chatNotice}>
+                      {galgameMode === 'story' ? t('game.storyEmpty') : t('chat.empty')}
+                    </p>
+                  )}
+                  {petChat.messages.map((message) => {
+                    if (message.role === 'user' && isGalgameControlMessage(message.text)) return null
+                    const storyReply = galgameMode === 'story' && message.role === 'assistant'
+                      ? parseGalgameReply(message.text)
+                      : null
+                    const visibleText = storyReply?.narrative ?? message.text
+                    const isLatestAssistant = lastPetMessage?.id === message.id
+                    return message.role === 'user'
+                      ? (
+                        <p key={message.id} className={css.chatMessageUser}>
+                          {message.text}
+                        </p>
+                      )
+                      : (
+                        <div
+                          key={message.id}
+                          className={css.chatMessageAssistant}
+                          data-streaming={message.streaming || undefined}
+                        >
+                          {visibleText !== '' && (
+                            <MarkdownText text={visibleText} streaming={message.streaming === true} />
+                          )}
+                          {storyReply !== null && storyReply.choices !== null
+                            && !message.streaming && isLatestAssistant && (
+                            <div className={css.galgameChoices}>
+                              <p className={css.galgameChoiceHint}>{t('game.chooseHint')}</p>
+                              {storyReply.choices.map((choice, index) => (
+                                <button
+                                  key={`${message.id}-choice-${index + 1}`}
+                                  type="button"
+                                  className={css.galgameChoiceButton}
+                                  disabled={galgameSending || petChat.running || petChat.sending
+                                    || petChat.pendingApproval !== null}
+                                  onClick={() => { submitStoryChoice(choice) }}
+                                >
+                                  <span className={css.galgameChoiceNumber}>{index + 1}</span>
+                                  <span>{choice}</span>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                          {storyReply !== null && storyReply.choices === null
+                            && !message.streaming && isLatestAssistant && !petChat.running && (
+                            <div className={css.galgameRetry}>
+                              <p>{t('game.noChoices')}</p>
+                              <button
+                                type="button"
+                                className={css.galgameRetryButton}
+                                disabled={galgameSending || petChat.sending || petChat.pendingApproval !== null}
+                                onClick={retryStoryChoices}
+                              >
+                                {t('game.retryChoices')}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )
+                  })}
+                  {petChat.pendingApproval !== null && (
+                    <section className={css.chatApproval} data-approval-key={petChat.pendingApproval.key}>
+                      <div className={css.chatApprovalHeader}>
+                        <span className={css.chatApprovalDot} aria-hidden="true" />
+                        {t('chat.approval.waiting')}
+                      </div>
+                      <div
+                        className={css.chatApprovalBody}
+                        data-approval-scroll=""
+                        tabIndex={0}
+                        role="group"
+                        aria-label={t('chat.approval.detailAria')}
+                      >
+                        <p className={css.chatApprovalReason}>
+                          {petChat.pendingApproval.reason
+                            ?? t('chat.approval.escalation', { toolName: petChat.pendingApproval.toolName })}
+                        </p>
+                        {petChat.pendingApproval.command !== undefined && (
+                          <p className={css.chatApprovalCommand}>{petChat.pendingApproval.command}</p>
+                        )}
+                      </div>
+                      <div className={css.chatApprovalActions}>
+                        <Button
+                          variant="outline"
+                          className={css.chatApprovalReject}
+                          disabled={approvalAnswering}
+                          onClick={() => { submitPetApproval('rejected') }}
+                        >
+                          {t('chat.approval.reject')}
+                        </Button>
+                        <Button
+                          variant="primary"
+                          disabled={approvalAnswering}
+                          onClick={() => { submitPetApproval('allowed-once') }}
+                        >
+                          {t('chat.approval.allowOnce')}
+                        </Button>
+                      </div>
+                    </section>
+                  )}
+                  {petChat.running && (
+                    <p className={css.chatThinking}>{t('chat.thinking')}</p>
+                  )}
+                  <div ref={chatEndRef} />
                 </div>
-                <div className={css.chatApprovalActions}>
-                  <Button
-                    variant="outline"
-                    className={css.chatApprovalReject}
-                    disabled={approvalAnswering}
-                    onClick={() => { submitPetApproval('rejected') }}
-                  >
-                    {t('chat.approval.reject')}
-                  </Button>
-                  <Button
-                    variant="primary"
-                    disabled={approvalAnswering}
-                    onClick={() => { submitPetApproval('allowed-once') }}
-                  >
-                    {t('chat.approval.allowOnce')}
-                  </Button>
-                </div>
-              </section>
+                {galgameMode !== 'story' && (
+                  <form className={css.chatComposer} onSubmit={submitPetChat}>
+                    <textarea
+                      className={css.chatInput}
+                      rows={1}
+                      value={chatDraft}
+                      placeholder={t('chat.placeholder')}
+                      aria-label={t('chat.placeholder')}
+                      disabled={!sessionsReady || galgameSending || petChat.sending || petChat.pendingApproval !== null}
+                      onChange={(event) => { setChatDraft(event.currentTarget.value) }}
+                      onKeyDown={onPetChatKeyDown}
+                    />
+                    <button
+                      type="submit"
+                      className={css.chatSend}
+                      aria-label={petChat.sending ? t('chat.sending') : t('chat.send')}
+                      disabled={!sessionsReady || galgameSending || petChat.sending || petChat.pendingApproval !== null || chatDraft.trim() === ''}
+                    >
+                      <IconSendOutline16 size={16} />
+                    </button>
+                  </form>
+                )}
+              </>
             )}
-            {petChat.running && (
-              <p className={css.chatThinking}>{t('chat.thinking')}</p>
-            )}
-            <div ref={chatEndRef} />
-          </div>
           {petChat.error !== null && (
             <p className={css.chatError} role="alert">
               {t('chat.error', { message: petChat.error })}
             </p>
           )}
-          <form className={css.chatComposer} onSubmit={submitPetChat}>
-            <textarea
-              className={css.chatInput}
-              rows={1}
-              value={chatDraft}
-              placeholder={t('chat.placeholder')}
-              aria-label={t('chat.placeholder')}
-              disabled={!sessionsReady || petChat.sending || petChat.pendingApproval !== null}
-              onChange={(event) => { setChatDraft(event.currentTarget.value) }}
-              onKeyDown={onPetChatKeyDown}
-            />
-            <button
-              type="submit"
-              className={css.chatSend}
-              aria-label={petChat.sending ? t('chat.sending') : t('chat.send')}
-              disabled={!sessionsReady || petChat.sending || petChat.pendingApproval !== null || chatDraft.trim() === ''}
-            >
-              <IconSendOutline16 size={16} />
-            </button>
-          </form>
         </aside>
       )}
 

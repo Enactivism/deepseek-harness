@@ -1,0 +1,8 @@
+# A short conversation-only composition for Galgame sessions.
+# Completing the persona omits deployment prompt sections; no tool consumers are mounted.
+- id: persona
+  name: '@deepseek-ai/dsh-persona'
+  config:
+    text: You are a friendly conversational assistant. Respond naturally to the user's message.
+    complete: true
+    includeRuntimeContext: false

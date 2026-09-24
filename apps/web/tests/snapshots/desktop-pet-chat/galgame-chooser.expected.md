@@ -1,0 +1,11 @@
+- complementary "Galgame":
+  - paragraph: Galgame
+  - paragraph: 选择一种互动方式
+  - button "返回桌宠聊天"
+  - button "选择模型":
+    - text: 选择模型
+    - img
+  - button "关闭桌宠聊天":
+    - img
+  - button "自由模式 通过聊天框自由和桌宠对话。"
+  - button "剧情模式 阅读剧情，并从 AI 提供的三个选项中选择回复。"

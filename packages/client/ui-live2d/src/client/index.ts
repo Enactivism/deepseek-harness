@@ -45,8 +45,8 @@ export function apply(ctx: ClientContext): void {
     },
     inject: (): DesktopPetChatInjected => ({
       hooks: { petChat },
-      activatePetChat: async () => { await petChat.activate() },
-      sendPetMessage: text => petChat.send(text),
+      activatePetChat: async (mode) => { await petChat.activate(mode) },
+      sendPetMessage: (text, mode) => petChat.send(text, mode),
       answerPetApproval: outcome => petChat.answerApproval(outcome),
     }),
   }, Live2DOverlay))

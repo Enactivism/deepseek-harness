@@ -1,4 +1,4 @@
-/** Desktop-pet chat controller over one transiently selected Harness Session. */
+/** Desktop-pet chat controller over one transiently selected Harness Session per mode. */
 
 import type {
   ConversationNode,
@@ -12,6 +12,18 @@ import type {
 } from '@deepseek-ai/dsh-client-runtime/client'
 
 const PET_SESSION_STORAGE_KEY = 'dsh.live2d.desktop-pet-session'
+const GALGAME_SESSION_STORAGE_KEY = 'dsh.live2d.galgame-session'
+const GALGAME_AGENT_PRESET = 'chat-only'
+
+/** The desktop-pet conversation selected by the visible chat mode. */
+export type DesktopPetChatMode = 'chat' | 'galgame'
+
+interface DesktopPetSession {
+  sessionId: SessionId
+  session: SessionFace
+  dispose: () => void
+  actionError: string | null
+}
 
 /** One compact message rendered inside the desktop-pet chat panel. */
 export interface DesktopPetChatMessage {
@@ -151,18 +163,16 @@ function approvalOf(snapshot: ConversationSnapshot): DesktopPetChatApproval | nu
 }
 
 /**
- * Own one Session for the desktop-pet page without mutating the primary
- * surface's persisted selection.
+ * Own mode-specific Sessions without mutating the primary surface's persisted
+ * selection.
  */
 export class DesktopPetChatController implements ObservableSnapshot<DesktopPetChatView> {
   private view = INITIAL_VIEW
   private readonly listeners = new Set<() => void>()
-  private session: SessionFace | undefined
-  private sessionId: SessionId | undefined
-  private sessionDisposer: (() => void) | undefined
-  private activation: Promise<SessionId> | null = null
-  private sending = false
-  private actionError: string | null = null
+  private readonly petSessions = new Map<DesktopPetChatMode, DesktopPetSession>()
+  private readonly activations = new Map<DesktopPetChatMode, Promise<SessionId>>()
+  private activeMode: DesktopPetChatMode = 'chat'
+  private sendingMode: DesktopPetChatMode | undefined
   private disposed = false
 
   /**
@@ -189,60 +199,79 @@ export class DesktopPetChatController implements ObservableSnapshot<DesktopPetCh
   }
 
   /**
-   * Restore or create the dedicated Session and open its history transiently.
-   * @returns the dedicated Session id.
+   * Restore or create the Session for one mode and open its history transiently.
+   * @param mode - ordinary desktop-pet chat or the tool-free Galgame conversation.
+   * @returns the Session id for the selected mode.
    */
-  activate(): Promise<SessionId> {
-    if (this.sessionId !== undefined) return Promise.resolve(this.sessionId)
-    if (this.activation !== null) return this.activation
-    this.publish({ ...this.view, status: 'loading', error: null })
-    const activation = this.resolveSession().then((sessionId) => {
+  activate(mode: DesktopPetChatMode = 'chat'): Promise<SessionId> {
+    this.activeMode = mode
+    const current = this.petSessions.get(mode)
+    if (current !== undefined) {
+      this.sessions.openTransient(current.sessionId)
+      this.publishSession()
+      return Promise.resolve(current.sessionId)
+    }
+    this.publish({ ...INITIAL_VIEW, status: 'loading', error: null })
+    const pending = this.activations.get(mode)
+    if (pending !== undefined) return pending
+    const activation = this.resolveSession(mode).then((sessionId) => {
       if (this.disposed) throw new Error('desktop-pet chat controller is disposed')
-      this.sessions.openTransient(sessionId)
       const binding = this.sessions.binding(sessionId)
       if (binding === undefined) throw new Error(`desktop-pet chat session "${sessionId}" is unavailable`)
-      this.sessionId = sessionId
-      this.session = binding.session
-      this.sessionDisposer = binding.session.subscribe(() => { this.publishSession() })
-      this.publishSession()
+      const petSession: DesktopPetSession = {
+        sessionId,
+        session: binding.session,
+        dispose: () => {},
+        actionError: null,
+      }
+      petSession.dispose = binding.session.subscribe(() => {
+        if (this.activeMode === mode) this.publishSession()
+      })
+      this.petSessions.set(mode, petSession)
+      if (this.activeMode === mode) {
+        this.sessions.openTransient(sessionId)
+        this.publishSession()
+      }
       return sessionId
     }).catch((error: unknown) => {
-      if (!this.disposed) {
+      if (!this.disposed && this.activeMode === mode) {
         this.publish({ ...INITIAL_VIEW, status: 'error', error: errorMessage(error) })
       }
       throw error
     }).finally(() => {
-      if (this.activation === activation) this.activation = null
+      if (this.activations.get(mode) === activation) this.activations.delete(mode)
     })
-    this.activation = activation
+    this.activations.set(mode, activation)
     return activation
   }
 
   /**
    * Admit one text prompt into the dedicated Session.
    * @param text - trimmed non-empty user message.
+   * @param mode - conversation that receives the message.
    * @returns whether the Host accepted the prompt.
    */
-  async send(text: string): Promise<boolean> {
-    if (this.sending || text === '') return false
-    await this.activate()
-    const session = this.session
-    if (session === undefined) return false
-    this.sending = true
-    this.actionError = null
+  async send(text: string, mode: DesktopPetChatMode = 'chat'): Promise<boolean> {
+    if (this.sendingMode !== undefined || text === '') return false
+    await this.activate(mode)
+    if (this.activeMode !== mode) return false
+    const petSession = this.petSessions.get(mode)
+    if (petSession === undefined) return false
+    this.sendingMode = mode
+    petSession.actionError = null
     this.publishSession()
     try {
-      const result = await session.prompt([{ type: 'text', text }], 'queue')
+      const result = await petSession.session.prompt([{ type: 'text', text }], 'queue')
       if (!result.ok) {
-        this.actionError = result.error.message
+        petSession.actionError = result.error.message
         return false
       }
       return true
     } catch (error: unknown) {
-      this.actionError = errorMessage(error)
+      petSession.actionError = errorMessage(error)
       return false
     } finally {
-      this.sending = false
+      this.sendingMode = undefined
       this.publishSession()
     }
   }
@@ -253,25 +282,24 @@ export class DesktopPetChatController implements ObservableSnapshot<DesktopPetCh
    * @returns whether the Host accepted the response carrier.
    */
   async answerApproval(outcome: DesktopPetChatApprovalOutcome): Promise<boolean> {
-    await this.activate()
-    const session = this.session
-    const sessionId = this.sessionId
-    if (session === undefined || sessionId === undefined) return false
-    const wait = session.getSnapshot().pending.find(item => item.kind === 'approval')
+    await this.activate(this.activeMode)
+    const petSession = this.petSessions.get(this.activeMode)
+    if (petSession === undefined) return false
+    const wait = petSession.session.getSnapshot().pending.find(item => item.kind === 'approval')
     if (wait === undefined) return false
     try {
       const receipt = await wait.respond({
         ok: true,
         value: {
-          sessionId,
+          sessionId: petSession.sessionId,
           approvalId: wait.payload.approvalId,
           outcome,
         },
       })
       if (receipt.accepted) return true
-      this.actionError = `approval response rejected: ${receipt.reason}`
+      petSession.actionError = `approval response rejected: ${receipt.reason}`
     } catch (error: unknown) {
-      this.actionError = errorMessage(error)
+      petSession.actionError = errorMessage(error)
     }
     this.publishSession()
     return false
@@ -281,50 +309,65 @@ export class DesktopPetChatController implements ObservableSnapshot<DesktopPetCh
   dispose(): void {
     if (this.disposed) return
     this.disposed = true
-    this.sessionDisposer?.()
-    this.sessionDisposer = undefined
+    for (const petSession of this.petSessions.values()) petSession.dispose()
+    this.petSessions.clear()
     this.listeners.clear()
   }
 
-  private async resolveSession(): Promise<SessionId> {
-    const stored = this.readStoredSession()
-    if (stored !== undefined && this.sessions.list.getSnapshot().byId[stored] !== undefined) {
+  private resolveSession(mode: DesktopPetChatMode): Promise<SessionId> {
+    const locks = typeof navigator === 'undefined' ? undefined : navigator.locks
+    const resolve = (): Promise<SessionId> => this.resolveOrCreateSession(mode)
+    if (locks === undefined) return resolve()
+    return locks.request(`dsh.live2d.session.${mode}`, resolve)
+  }
+
+  private async resolveOrCreateSession(mode: DesktopPetChatMode): Promise<SessionId> {
+    const key = mode === 'galgame' ? GALGAME_SESSION_STORAGE_KEY : PET_SESSION_STORAGE_KEY
+    const stored = this.readStoredSession(key)
+    const storedSummary = stored === undefined ? undefined : this.sessions.list.getSnapshot().byId[stored]
+    if (stored !== undefined && storedSummary !== undefined
+      && (mode === 'chat' || storedSummary.agentPreset === GALGAME_AGENT_PRESET)) {
       return stored
     }
-    const created = await this.sessions.create()
-    this.writeStoredSession(created)
+    const created = await this.sessions.create(mode === 'galgame' ? { agentPreset: GALGAME_AGENT_PRESET } : {})
+    if (mode === 'galgame'
+      && this.sessions.list.getSnapshot().byId[created]?.agentPreset !== GALGAME_AGENT_PRESET) {
+      throw new Error(`desktop-pet Galgame Session did not use the "${GALGAME_AGENT_PRESET}" preset`)
+    }
+    this.writeStoredSession(key, created)
     return created
   }
 
-  private readStoredSession(): SessionId | undefined {
+  private readStoredSession(key: string): SessionId | undefined {
     try {
-      const value = this.storage?.getItem(PET_SESSION_STORAGE_KEY)
+      const value = this.storage?.getItem(key)
       return value === null || value === undefined ? undefined : value as SessionId
     } catch (error: unknown) {
-      console.error('[ui-live2d] failed to restore desktop-pet chat session', error)
+      console.error('[ui-live2d] failed to restore desktop-pet session', error)
       return undefined
     }
   }
 
-  private writeStoredSession(sessionId: SessionId): void {
+  private writeStoredSession(key: string, sessionId: SessionId): void {
     try {
-      this.storage?.setItem(PET_SESSION_STORAGE_KEY, sessionId)
+      this.storage?.setItem(key, sessionId)
     } catch (error: unknown) {
       console.error('[ui-live2d] failed to persist desktop-pet chat session', error)
     }
   }
 
   private publishSession(): void {
-    const snapshot = this.session?.getSnapshot()
-    if (snapshot === undefined || this.sessionId === undefined) return
+    const petSession = this.petSessions.get(this.activeMode)
+    const snapshot = petSession?.session.getSnapshot()
+    if (snapshot === undefined || petSession === undefined) return
     this.publish({
       status: snapshot.openState === 'error' ? 'error' : 'ready',
-      sessionId: this.sessionId,
+      sessionId: petSession.sessionId,
       messages: messagesOf(snapshot),
       running: snapshot.running,
-      sending: this.sending,
+      sending: this.sendingMode === this.activeMode,
       pendingApproval: approvalOf(snapshot),
-      error: this.actionError ?? snapshot.openError?.message ?? snapshot.promptError?.error.message ?? null,
+      error: petSession.actionError ?? snapshot.openError?.message ?? snapshot.promptError?.error.message ?? null,
     })
   }
 

@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/client/ui-live2d/README.md
-README.md: e92a7772706aec5b3b054eae9a1d49b6ee9d0da6
-README.zh.md: adbfaef13a66359b02fa9655e00579690e555d65
+README.md: a883ba999a3e89a582040b340507e98c48d37773
+README.zh.md: b26efca17fc5cea87f7c2863010ab6dc7c796afd
