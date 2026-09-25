@@ -12,6 +12,8 @@ const OPEN_TAG = '<galgame-choices>'
 const CLOSE_TAG = '</galgame-choices>'
 /** Prefix distinguishing model-visible mode instructions from player messages. */
 export const GALGAME_CONTROL_PREFIX = '[Galgame mode instruction]\n'
+/** Marker identifying the story card stored in the Galgame Session history. */
+export const GALGAME_STORY_CARD_MARKER = '[Galgame story card]'
 
 /**
  * Identify a logged mode instruction that is hidden from the player transcript.

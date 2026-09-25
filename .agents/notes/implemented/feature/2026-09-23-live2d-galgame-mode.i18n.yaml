@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-23-live2d-galgame-mode.md
-2026-09-23-live2d-galgame-mode.md: 47b76890ebc3e80150cd869019a0872c7ef8885d
-2026-09-23-live2d-galgame-mode.zh.md: ef4edc5c35a2087ebc83444fa02cbc426de66bd2
+2026-09-23-live2d-galgame-mode.md: 49cdaebd8d4d6ae0e565a80b767f6ce3c6c0ba57
+2026-09-23-live2d-galgame-mode.zh.md: b93723051307de5f71cb071e91fa8235859f0590

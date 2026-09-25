@@ -29,7 +29,7 @@ import type {
 import type { Live2DKey } from './locales.ts'
 import { buildModelBundle, ModelImportError, type ModelBundle } from './model-files.ts'
 import {
-  GALGAME_CONTROL_PREFIX, isGalgameControlMessage, parseGalgameReply,
+  GALGAME_CONTROL_PREFIX, GALGAME_STORY_CARD_MARKER, isGalgameControlMessage, parseGalgameReply,
 } from './galgame.ts'
 import { mountLive2D } from './renderer.ts'
 import { loadModelBundle, saveModelBundle } from './model-store.ts'
@@ -66,10 +66,34 @@ export type Live2DOverlayProps =
   & InjectFace<DesktopPetChatInjected>
 
 type LoadState = 'empty' | 'loading' | 'ready' | 'error'
-type GalgameMode = 'choose' | 'free' | 'story'
+type GalgameMode = 'choose' | 'setup' | 'free' | 'story'
+type GalgameTone = 'everyday' | 'romance' | 'fantasy' | 'mystery'
+
+interface GalgameStorySetup {
+  tone: GalgameTone
+  character: string
+  player: string
+  scenario: string
+}
 
 const GALGAME_MODE_STORAGE_KEY = 'dsh.live2d.galgame-mode'
 const GALGAME_STORY_ACTIVE_STORAGE_KEY = 'dsh.live2d.galgame-story-active'
+const GALGAME_STORY_SETUP_STORAGE_KEY = 'dsh.live2d.galgame-story-setup'
+const GALGAME_FOCUS_MODE_STORAGE_KEY = 'dsh.live2d.galgame-focus-mode'
+const GALGAME_SETUP_TEXT_LIMIT = 240
+const DEFAULT_GALGAME_STORY_SETUP: GalgameStorySetup = {
+  tone: 'everyday',
+  character: '',
+  player: '',
+  scenario: '',
+}
+
+const galgameToneLabels: Record<GalgameTone, Live2DKey> = {
+  everyday: 'game.tone.everyday',
+  romance: 'game.tone.romance',
+  fantasy: 'game.tone.fantasy',
+  mystery: 'game.tone.mystery',
+}
 
 const DESKTOP_PET_SCALE_MIN = 2 / 3
 const DESKTOP_PET_BASE_WIDTH = 360
@@ -82,9 +106,58 @@ function readGalgameMode(): GalgameMode | null {
   if (typeof window === 'undefined') return null
   try {
     const value = window.localStorage.getItem(GALGAME_MODE_STORAGE_KEY)
-    return value === 'choose' || value === 'free' || value === 'story' ? value : null
+    return value === 'choose' || value === 'setup' || value === 'free' || value === 'story' ? value : null
   } catch {
     return null
+  }
+}
+
+function readGalgameStorySetup(): GalgameStorySetup {
+  try {
+    const stored = window.localStorage.getItem(GALGAME_STORY_SETUP_STORAGE_KEY)
+    if (stored === null) return DEFAULT_GALGAME_STORY_SETUP
+    const value: unknown = JSON.parse(stored)
+    if (typeof value !== 'object' || value === null) return DEFAULT_GALGAME_STORY_SETUP
+    const fields = value as Record<string, unknown>
+    const tone = fields.tone
+    const text = (field: unknown): string => (
+      typeof field === 'string' ? field.slice(0, GALGAME_SETUP_TEXT_LIMIT) : ''
+    )
+    return {
+      tone: tone === 'everyday' || tone === 'romance' || tone === 'fantasy' || tone === 'mystery'
+        ? tone
+        : DEFAULT_GALGAME_STORY_SETUP.tone,
+      character: text(fields.character),
+      player: text(fields.player),
+      scenario: text(fields.scenario),
+    }
+  } catch {
+    return DEFAULT_GALGAME_STORY_SETUP
+  }
+}
+
+function writeGalgameStorySetup(setup: GalgameStorySetup): void {
+  try {
+    window.localStorage.setItem(GALGAME_STORY_SETUP_STORAGE_KEY, JSON.stringify(setup))
+  } catch {
+    // The current story can still use the in-memory setup when storage is unavailable.
+  }
+}
+
+function readGalgameFocusMode(): boolean {
+  try {
+    return window.localStorage.getItem(GALGAME_FOCUS_MODE_STORAGE_KEY) === 'true'
+  } catch {
+    return false
+  }
+}
+
+function writeGalgameFocusMode(enabled: boolean): void {
+  try {
+    if (enabled) window.localStorage.setItem(GALGAME_FOCUS_MODE_STORAGE_KEY, 'true')
+    else window.localStorage.removeItem(GALGAME_FOCUS_MODE_STORAGE_KEY)
+  } catch {
+    // The story transcript remains available when storage is unavailable.
   }
 }
 
@@ -182,6 +255,8 @@ export function Live2DOverlay({
   const [chatDraft, setChatDraft] = useState('')
   const [galgameMode, setGalgameMode] = useState<GalgameMode | null>(() => readGalgameMode())
   const [galgameStoryActive, setGalgameStoryActive] = useState(() => readGalgameStoryActive())
+  const [galgameStorySetup, setGalgameStorySetup] = useState(() => readGalgameStorySetup())
+  const [galgameFocusMode, setGalgameFocusMode] = useState(() => readGalgameFocusMode())
   const [galgameSending, setGalgameSending] = useState(false)
   const [approvalAnswering, setApprovalAnswering] = useState(false)
   const chatEndRef = useRef<HTMLDivElement>(null)
@@ -202,9 +277,17 @@ export function Live2DOverlay({
   const separateDesktopPetChat = desktopPet && desktopShell
   const petChatMode: DesktopPetChatMode = galgameMode === null ? 'chat' : 'galgame'
   const lastPetMessage = petChat.messages[petChat.messages.length - 1]
-  const lastStoryReply = lastPetMessage?.role === 'assistant'
-    ? parseGalgameReply(lastPetMessage.text)
-    : null
+  const galgameStoryStarted = galgameStoryActive || petChat.messages.some(message => (
+    message.role === 'user'
+      ? isGalgameControlMessage(message.text) && message.text.includes(GALGAME_STORY_CARD_MARKER)
+      : parseGalgameReply(message.text).choices !== null
+  ))
+  const conversationMessages = petChat.messages.filter(message => (
+    message.role !== 'user' || !isGalgameControlMessage(message.text)
+  ))
+  const displayedPetMessages = galgameMode === 'story' && galgameFocusMode
+    ? conversationMessages.slice(-1)
+    : conversationMessages
 
   useEffect(() => {
     setApprovalAnswering(false)
@@ -213,9 +296,13 @@ export function Live2DOverlay({
   useEffect(() => {
     const syncGalgameMode = (event: StorageEvent): void => {
       if (event.key !== null && event.key !== GALGAME_MODE_STORAGE_KEY
-        && event.key !== GALGAME_STORY_ACTIVE_STORAGE_KEY) return
+        && event.key !== GALGAME_STORY_ACTIVE_STORAGE_KEY
+        && event.key !== GALGAME_STORY_SETUP_STORAGE_KEY
+        && event.key !== GALGAME_FOCUS_MODE_STORAGE_KEY) return
       setGalgameMode(readGalgameMode())
       setGalgameStoryActive(readGalgameStoryActive())
+      setGalgameStorySetup(readGalgameStorySetup())
+      setGalgameFocusMode(readGalgameFocusMode())
     }
     window.addEventListener('storage', syncGalgameMode)
     return () => { window.removeEventListener('storage', syncGalgameMode) }
@@ -371,6 +458,11 @@ export function Live2DOverlay({
     writeGalgameStoryActive(active)
   }
 
+  const updateGalgameStorySetup = (next: GalgameStorySetup): void => {
+    setGalgameStorySetup(next)
+    writeGalgameStorySetup(next)
+  }
+
   const submitGalgameMessage = (text: string, onAccepted?: () => void): void => {
     if (galgameSending) return
     setGalgameSending(true)
@@ -396,11 +488,47 @@ export function Live2DOverlay({
       }
       return
     }
-    markGalgameStoryActive(true)
-    const hasCurrentChoices = lastStoryReply !== null && lastStoryReply.choices !== null
-    if (hasCurrentChoices) return
-    const promptKey = petChat.messages.length === 0 ? 'game.storyPrompt' : 'game.continuePrompt'
-    submitGalgameControl(t(promptKey))
+    if (!galgameStoryStarted) {
+      setGalgameScreen('setup')
+      return
+    }
+    setGalgameScreen('story')
+    const latestConversationMessage = [...conversationMessages].reverse()[0]
+    const hasCurrentChoices = latestConversationMessage?.role === 'assistant'
+      && parseGalgameReply(latestConversationMessage.text).choices !== null
+    if (hasCurrentChoices) {
+      markGalgameStoryActive(true)
+      return
+    }
+    submitGalgameControl(t('game.continuePrompt'), () => { markGalgameStoryActive(true) })
+  }
+
+  const startGalgameStory = (event: FormEvent<HTMLFormElement>): void => {
+    event.preventDefault()
+    if (galgameSending || petChat.running || petChat.sending || petChat.pendingApproval !== null) return
+    writeGalgameStorySetup(galgameStorySetup)
+    const setupLines = [
+      `${t('game.storyToneLabel')}: ${t(galgameToneLabels[galgameStorySetup.tone])}`,
+      ...(galgameStorySetup.character.trim() === ''
+        ? [] : [`${t('game.characterLabel')}: ${galgameStorySetup.character.trim()}`]),
+      ...(galgameStorySetup.player.trim() === ''
+        ? [] : [`${t('game.playerRoleLabel')}: ${galgameStorySetup.player.trim()}`]),
+      ...(galgameStorySetup.scenario.trim() === ''
+        ? [] : [`${t('game.scenarioLabel')}: ${galgameStorySetup.scenario.trim()}`]),
+    ]
+    const prompt = galgameStoryStarted ? t('game.updateSetupPrompt') : t('game.storyPrompt')
+    const storyCard = [
+      `${prompt}\n\n${GALGAME_STORY_CARD_MARKER}`,
+      setupLines.join('\n'),
+    ].filter(line => line !== '').join('\n')
+    setGalgameScreen('story')
+    submitGalgameControl(storyCard, () => { markGalgameStoryActive(true) })
+  }
+
+  const toggleGalgameFocusMode = (): void => {
+    const next = !galgameFocusMode
+    setGalgameFocusMode(next)
+    writeGalgameFocusMode(next)
   }
 
   const submitStoryChoice = (choice: string): void => {
@@ -535,7 +663,9 @@ export function Live2DOverlay({
               <p className={css.chatIsolation}>
                 {galgameMode === null
                   ? t('chat.isolated')
-                  : galgameMode === 'choose' ? t('game.intro') : t(`game.${galgameMode}`)}
+                  : galgameMode === 'choose'
+                    ? t('game.intro')
+                    : galgameMode === 'setup' ? t('game.setupTitle') : t(`game.${galgameMode}`)}
               </p>
             </div>
             <div className={css.chatHeaderActions}>
@@ -596,34 +726,126 @@ export function Live2DOverlay({
             )
             : (
               <>
-                {galgameMode !== null && (
-                  <div className={css.galgameModeTabs} role="tablist" aria-label={t('game.title')}>
-                    {(['free', 'story'] as const).map(mode => (
-                      <button
-                        key={mode}
-                        type="button"
-                        role="tab"
-                        aria-selected={galgameMode === mode}
-                        className={css.galgameModeTab}
-                        disabled={galgameSending || petChat.running || petChat.sending || petChat.pendingApproval !== null}
-                        onClick={() => { selectGalgameMode(mode) }}
+                {galgameMode === 'setup' && (
+                  <form className={css.galgameStorySetup} onSubmit={startGalgameStory}>
+                    <p className={css.galgameSetupHint}>{t('game.setupHint')}</p>
+                    <label className={css.galgameSetupField}>
+                      <span>{t('game.storyToneLabel')}</span>
+                      <select
+                        className={css.galgameSetupSelect}
+                        value={galgameStorySetup.tone}
+                        onChange={(event) => {
+                          updateGalgameStorySetup({ ...galgameStorySetup, tone: event.currentTarget.value as GalgameTone })
+                        }}
                       >
-                        {t(`game.${mode}`)}
-                      </button>
-                    ))}
+                        {(Object.keys(galgameToneLabels) as GalgameTone[]).map(tone => (
+                          <option key={tone} value={tone}>{t(galgameToneLabels[tone])}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className={css.galgameSetupField}>
+                      <span>{t('game.characterLabel')}</span>
+                      <textarea
+                        className={css.galgameSetupInput}
+                        rows={2}
+                        maxLength={GALGAME_SETUP_TEXT_LIMIT}
+                        value={galgameStorySetup.character}
+                        placeholder={t('game.characterPlaceholder')}
+                        onChange={(event) => {
+                          updateGalgameStorySetup({ ...galgameStorySetup, character: event.currentTarget.value })
+                        }}
+                      />
+                    </label>
+                    <label className={css.galgameSetupField}>
+                      <span>{t('game.playerRoleLabel')}</span>
+                      <textarea
+                        className={css.galgameSetupInput}
+                        rows={2}
+                        maxLength={GALGAME_SETUP_TEXT_LIMIT}
+                        value={galgameStorySetup.player}
+                        placeholder={t('game.playerRolePlaceholder')}
+                        onChange={(event) => {
+                          updateGalgameStorySetup({ ...galgameStorySetup, player: event.currentTarget.value })
+                        }}
+                      />
+                    </label>
+                    <label className={css.galgameSetupField}>
+                      <span>{t('game.scenarioLabel')}</span>
+                      <textarea
+                        className={css.galgameSetupInput}
+                        rows={3}
+                        maxLength={GALGAME_SETUP_TEXT_LIMIT}
+                        value={galgameStorySetup.scenario}
+                        placeholder={t('game.scenarioPlaceholder')}
+                        onChange={(event) => {
+                          updateGalgameStorySetup({ ...galgameStorySetup, scenario: event.currentTarget.value })
+                        }}
+                      />
+                    </label>
+                    <button
+                      type="submit"
+                      className={css.galgameSetupSubmit}
+                      disabled={petChat.status !== 'ready' || galgameSending || petChat.running
+                      || petChat.sending || petChat.pendingApproval !== null}
+                    >
+                      {galgameStoryStarted ? t('game.applySetup') : t('game.startStory')}
+                    </button>
+                  </form>
+                )}
+                {galgameMode !== null && (
+                  <div className={css.galgameToolbar}>
+                    <div className={css.galgameModeTabs} role="tablist" aria-label={t('game.title')}>
+                      {(['free', 'story'] as const).map(mode => (
+                        <button
+                          key={mode}
+                          type="button"
+                          role="tab"
+                          aria-selected={galgameMode === mode}
+                          className={css.galgameModeTab}
+                          disabled={galgameSending || petChat.running || petChat.sending || petChat.pendingApproval !== null}
+                          onClick={() => { selectGalgameMode(mode) }}
+                        >
+                          {t(`game.${mode}`)}
+                        </button>
+                      ))}
+                    </div>
+                    {galgameMode === 'story' && (
+                      <div className={css.galgamePresentationActions}>
+                        <button
+                          type="button"
+                          className={css.galgameModeTab}
+                          aria-pressed={galgameFocusMode}
+                          onClick={toggleGalgameFocusMode}
+                        >
+                          {galgameFocusMode ? t('game.showHistory') : t('game.focus')}
+                        </button>
+                        <button
+                          type="button"
+                          className={css.galgameModeTab}
+                          disabled={galgameSending || petChat.running || petChat.sending
+                            || petChat.pendingApproval !== null}
+                          onClick={() => { setGalgameScreen('setup') }}
+                        >
+                          {t('game.editSetup')}
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
-                <div className={css.chatMessages} aria-live="polite">
+                <div
+                  className={css.chatMessages}
+                  data-galgame-focus={galgameMode === 'story' && galgameFocusMode || undefined}
+                  aria-live="polite"
+                >
                   {petChat.status === 'loading' && (
                     <p className={css.chatNotice}>{t('chat.loading')}</p>
                   )}
-                  {petChat.status === 'ready' && petChat.messages.length === 0 && (
+                  {petChat.status === 'ready' && displayedPetMessages.length === 0 && (
                     <p className={css.chatNotice}>
                       {galgameMode === 'story' ? t('game.storyEmpty') : t('chat.empty')}
                     </p>
                   )}
-                  {petChat.messages.map((message) => {
-                    if (message.role === 'user' && isGalgameControlMessage(message.text)) return null
+                  {displayedPetMessages.map((message) => {
                     const storyReply = galgameMode === 'story' && message.role === 'assistant'
                       ? parseGalgameReply(message.text)
                       : null
