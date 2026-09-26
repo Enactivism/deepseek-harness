@@ -57,13 +57,33 @@ export async function saveModelBundle(bundle: ModelBundle): Promise<void> {
     })
   }
   const database = await openDatabase()
-  await new Promise<void>((resolve, reject) => {
-    const request = database.transaction(storeName, 'readwrite').objectStore(storeName)
-      .put({ name: bundle.name, entryPath: bundle.entryPath, files }, 'current')
-    request.onsuccess = () => { resolve() }
-    request.onerror = () => { reject(request.error ?? new Error('Live2D model storage failed')) }
-  })
-  database.close()
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const request = database.transaction(storeName, 'readwrite').objectStore(storeName)
+        .put({ name: bundle.name, entryPath: bundle.entryPath, files }, 'current')
+      request.onsuccess = () => { resolve() }
+      request.onerror = () => { reject(request.error ?? new Error('Live2D model storage failed')) }
+    })
+  } finally {
+    database.close()
+  }
+}
+
+/**
+ * Remove the persisted model so an explicit UI removal survives the next launch.
+ */
+export async function clearModelBundle(): Promise<void> {
+  if (typeof indexedDB === 'undefined') throw new Error('IndexedDB is unavailable')
+  const database = await openDatabase()
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const request = database.transaction(storeName, 'readwrite').objectStore(storeName).delete('current')
+      request.onsuccess = () => { resolve() }
+      request.onerror = () => { reject(request.error ?? new Error('Live2D model storage failed')) }
+    })
+  } finally {
+    database.close()
+  }
 }
 
 /**
@@ -73,12 +93,16 @@ export async function saveModelBundle(bundle: ModelBundle): Promise<void> {
 export async function loadModelBundle(): Promise<ModelBundle | null> {
   if (typeof indexedDB === 'undefined') throw new Error('IndexedDB is unavailable')
   const database = await openDatabase()
-  const stored = await new Promise<StoredModel | undefined>((resolve, reject) => {
-    const request = database.transaction(storeName, 'readonly').objectStore(storeName).get('current')
-    request.onsuccess = () => { resolve(request.result as StoredModel | undefined) }
-    request.onerror = () => { reject(request.error ?? new Error('Live2D model storage failed')) }
-  })
-  database.close()
+  let stored: StoredModel | undefined
+  try {
+    stored = await new Promise<StoredModel | undefined>((resolve, reject) => {
+      const request = database.transaction(storeName, 'readonly').objectStore(storeName).get('current')
+      request.onsuccess = () => { resolve(request.result as StoredModel | undefined) }
+      request.onerror = () => { reject(request.error ?? new Error('Live2D model storage failed')) }
+    })
+  } finally {
+    database.close()
+  }
   if (stored === undefined) return null
   return {
     name: stored.name,

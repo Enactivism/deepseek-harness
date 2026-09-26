@@ -6,6 +6,8 @@ Local-first Live2D companion for the Harness coding workspace. The feature contr
 
 The empty state explains the workflow and lets a user choose a model folder. The folder must contain one `.model3.json` or `.model.json` entry file and its referenced `.moc3`/`.moc`, texture, motion, expression, physics, and audio resources. The browser converts the selected files to temporary object URLs and rewrites the entry document's local references before handing it to [`l2d`](https://github.com/hacxy/l2d); model bytes are not sent to the Host or the model provider.
 
+The selected model bundle is persisted as browser-local bytes in same-origin IndexedDB and restored when any companion page starts, including the main workspace and the desktop-pet page. Removing the model also deletes the stored bundle; the browser profile is the persistence boundary, so another browser or machine requires a new selection.
+
 After loading, the companion shows the current model name and file count, follows the selected Harness session's running state with a small status indicator, and exposes model size, opacity, hide/show, change, and remove controls. The renderer is disposed together with the slot entry, including WebGL state and object URLs, so selecting a new model does not leave the previous model resident.
 
 The component is deliberately browser-only. Qt remains a WebEngine/process shell and does not need a Live2D SDK or a second rendering path. This keeps local model ownership and the UI seam in the same place as the rest of the Web plugin system.
@@ -49,7 +51,7 @@ The repeated personality block contributes to the input context for each pet tur
 
 ## Known Limitations and Deferred Work
 
-- **The current model stays local to this browser profile** — model files are cached in same-origin IndexedDB for the desktop-pet view and are not synchronized to another browser or machine.
+- **The current model stays local to this browser profile** — model files are cached in same-origin IndexedDB for the companion and desktop-pet views and are not synchronized to another browser or machine.
 - **One folder at a time** — the picker rejects a selection containing multiple model entry files, which avoids silently displaying the wrong character when a parent directory contains several models.
 - **Renderer coverage follows `l2d`** — the package accepts the two common Cubism entry formats, while a particular model can still fail if its exported resources or license are incomplete. The model owner remains responsible for the model's distribution and usage rights.
 - **Chat does not yet drive animation** — the model keeps its own idle/tap behavior; message-linked expressions, voice/lip-sync, and a model library can be added behind a future browser-side service without moving model bytes through the Host.

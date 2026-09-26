@@ -12,6 +12,8 @@ Live2D 陪伴模型渲染在 Web 工作区右侧栏。桌面壳用户需要把�
 
 Qt 壳拦截 Live2D 组件发出的 `dsh://desktop-pet/toggle` 导航请求。进入模式后，创建第二个 WebEngine 视图并放入无边框、置顶的 360x480 工具窗口，移动到主屏幕右下角；主工作区窗口及其原有视图保持显示且不变。所选模型文件会缓存到同源 IndexedDB，并在桌宠页面打开后通过同源 `BroadcastChannel` 再发送一次；即使 Qt WebEngine 配置拒绝 IndexedDB 写入，桌宠模式仍可工作。Web 文档通过 `dshDesktopPet=1` 查询参数，外壳会在应用挂载后移除该页面中所有非陪伴 DOM 节点，并设置透明页面/窗口背景。视口边缘的不接收输入覆盖层会在鼠标进入桌宠窗口时持续明暗闪烁绿色，鼠标移出后完全透明；独立聊天页面不会创建该覆盖层。在支持全局坐标的平台上，用于模型视线的同一个 16 毫秒原生鼠标轮询会比较鼠标位置与窗口几何范围，并明确通知页面是否显示覆盖层；原生 Wayland 则通过应用鼠标及进入／离开事件完成相同更新。页面不会根据 WebEngine 的 `pointerout` 推断显示状态，因为鼠标离开透明顶层窗口时不保证产生该事件；模型视线使用的合成 `mousemove` 事件也无法让边缘显现。桌宠页面成功加载后，外壳把每次轮询的桌面鼠标位置映射为 WebEngine 客户区坐标且不限制在窗口范围内，再在页面主 JavaScript world 中发送当前 `mousemove` 事件。持续注入可以让页面和模型异步初始化完成后仍然取得停在窗口外的鼠标位置，使现有 `l2d` 渲染器能追踪窗口外的鼠标。Linux Wayland 会话提供 XWayland display 时，外壳会在创建应用前选择 Qt 的 `xcb` 后端；显式设置的 `QT_QPA_PLATFORM` 优先，而原生 Wayland 只提供获焦 surface 的坐标，因此会关闭全局轮询。拖动窗口可移动桌宠。垂直滚轮输入会围绕窗口底部中心调整原生窗口，并把调整后的绝对比例发送给桌宠页面；页面以 360x480 作为画布基准尺寸，并把同一比例应用到画布宽高，窗口最小为 240x320，因此模型渲染表面和窗口保持同步。双击退出模式。普通工作区渲染器不会切换到桌宠显示方式。指针刷新的原因记录在[桌宠指针刷新说明](../bug-fix/2026-09-25-desktop-pet-pointer-refresh.md)中。
 
+每个陪伴页面都会在启动时恢复缓存的模型，移除模型时也会删除 IndexedDB 记录。
+
 桌面入口通过 `DeepSeekHarnessQt` user-agent 标记识别。普通浏览器仍保持右侧栏行为，不显示原生窗口操作。
 
 桌宠文档持有一个 `DesktopPetChatController`，从本地存储分别恢复普通聊天和 Galgame 的 Session id，缺少时创建对应 Session。它通过 `SessionRuntime.openTransient()` 暂存当前模式的 Session 并打开历史记录，但不会覆盖 `dsh.sessions.current` 中的主界面选择，因此主 WebEngine 视图仍会恢复并继续自己的当前 Session。紧凑面板投影用户和助手文本。普通桌宠聊天使用配置的智能体和工具，并显示一次性工具确认操作；Galgame 使用[纯聊天 Session 组成](2026-09-24-live2d-galgame-chat-only-session.md)中定义的无工具组成。

@@ -4,11 +4,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { Live2DOverlayProps } from '../src/client/Live2DOverlay.tsx'
+import type { ModelBundle } from '../src/client/model-files.ts'
 import { en, zh } from '../src/client/locales.ts'
 import { Live2DOverlay } from '../src/client/Live2DOverlay.tsx'
 
 const mountLive2D = vi.hoisted(() => vi.fn(() => () => {}))
+const loadModelBundle = vi.hoisted(() => vi.fn(() => Promise.resolve(null as ModelBundle | null)))
+const saveModelBundle = vi.hoisted(() => vi.fn(() => Promise.resolve()))
+const clearModelBundle = vi.hoisted(() => vi.fn(() => Promise.resolve()))
 vi.mock('../src/client/renderer.ts', () => ({ mountLive2D }))
+vi.mock('../src/client/model-store.ts', () => ({
+  clearModelBundle, loadModelBundle, saveModelBundle,
+}))
 
 beforeEach(() => {
   Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
@@ -20,6 +27,12 @@ beforeEach(() => {
 afterEach(() => {
   cleanup()
   mountLive2D.mockClear()
+  loadModelBundle.mockReset()
+  loadModelBundle.mockResolvedValue(null)
+  saveModelBundle.mockReset()
+  saveModelBundle.mockResolvedValue(undefined)
+  clearModelBundle.mockReset()
+  clearModelBundle.mockResolvedValue(undefined)
   window.localStorage.removeItem('dsh.live2d.desktop-pet-persona')
   window.history.replaceState({}, '', '/')
   Reflect.deleteProperty(HTMLElement.prototype, 'scrollIntoView')
@@ -62,6 +75,19 @@ function selectedFiles(): File[] {
 }
 
 describe('Live2D companion right workspace', () => {
+  it('restores the persisted model when the application starts', async () => {
+    const [entry, moc] = selectedFiles()
+    loadModelBundle.mockResolvedValue({
+      name: 'Haru', entryPath: 'Haru.model3.json', files: [entry, moc],
+    })
+
+    render(<Live2DOverlay {...props()} />)
+
+    await waitFor(() => { expect(screen.getAllByText('Haru')).not.toHaveLength(0) })
+    expect(loadModelBundle).toHaveBeenCalledTimes(1)
+    expect(screen.getByText('2 个文件')).toBeTruthy()
+  })
+
   it('starts with a discoverable local upload state and can be hidden/restored', () => {
     render(<Live2DOverlay {...props()} />)
     expect(screen.getByText('上传你的模型')).toBeTruthy()
@@ -88,6 +114,18 @@ describe('Live2D companion right workspace', () => {
     expect(screen.getByRole('slider', { name: '透明度' })).toBeTruthy()
     fireEvent.change(screen.getByRole('slider', { name: '模型大小' }), { target: { value: '1.2' } })
     expect(screen.getByText('120%')).toBeTruthy()
+  })
+
+  it('clears the persisted model when the user removes it', async () => {
+    const view = render(<Live2DOverlay {...props()} />)
+    const input = view.container.querySelector('input[type="file"]')
+    fireEvent.change(input!, { target: { files: selectedFiles() } })
+    await waitFor(() => { expect(screen.getAllByText('Haru')).not.toHaveLength(0) })
+
+    fireEvent.click(screen.getByRole('button', { name: '移除模型' }))
+
+    await waitFor(() => { expect(clearModelBundle).toHaveBeenCalledTimes(1) })
+    expect(screen.getByText('上传你的模型')).toBeTruthy()
   })
 
   it('keeps the existing model when a second selection is invalid', async () => {

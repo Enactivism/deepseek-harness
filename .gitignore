@@ -39,3 +39,19 @@ apps/web/dist/
 worktrees/
 .agents/worktrees/
 .typert-*/
+
+# User-provided Live2D model folders and model-specific files stay local.
+.live2d-models/
+live2d-models/
+Live2DModels/
+**/*.model3.json
+**/*.model.json
+**/*.moc3
+**/*.moc
+**/*.motion3.json
+**/*.motion.json
+**/*.exp3.json
+**/*.exp.json
+**/*.physics3.json
+**/*.physics.json
+**/*.pose3.json

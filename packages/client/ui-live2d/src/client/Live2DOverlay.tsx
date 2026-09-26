@@ -37,7 +37,7 @@ import {
   writeDesktopPetPersona,
 } from './desktop-pet-persona.ts'
 import { mountLive2D } from './renderer.ts'
-import { loadModelBundle, saveModelBundle } from './model-store.ts'
+import { clearModelBundle, loadModelBundle, saveModelBundle } from './model-store.ts'
 import { broadcastModelBundle, subscribeToModelTransfer } from './model-transfer.ts'
 import css from './Live2DOverlay.module.css'
 
@@ -268,7 +268,8 @@ export function Live2DOverlay({
   const [galgameSending, setGalgameSending] = useState(false)
   const [approvalAnswering, setApprovalAnswering] = useState(false)
   const chatEndRef = useRef<HTMLDivElement>(null)
-  const savePromiseRef = useRef<Promise<void> | null>(null)
+  const modelRevisionRef = useRef(0)
+  const persistencePromiseRef = useRef<Promise<void>>(Promise.resolve())
   const [desktopPet, setDesktopPet] = useState(() => (
     typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('dshDesktopPet')
   ))
@@ -346,15 +347,19 @@ export function Live2DOverlay({
   }, [model, t])
 
   useEffect(() => {
-    if (!desktopPet) return
     let cancelled = false
-    const unsubscribe = subscribeToModelTransfer((next) => {
-      if (!cancelled) setModel(next)
-    })
+    const revision = modelRevisionRef.current
+    const unsubscribe = desktopPet
+      ? subscribeToModelTransfer((next) => {
+        if (cancelled) return
+        modelRevisionRef.current += 1
+        setModel(next)
+      })
+      : () => {}
     void loadModelBundle().then((next) => {
-      if (!cancelled && next !== null) setModel(next)
+      if (!cancelled && next !== null && modelRevisionRef.current === revision) setModel(next)
     }).catch((storageError: unknown) => {
-      console.error('[ui-live2d] failed to restore model for desktop pet', storageError)
+      console.error('[ui-live2d] failed to restore model', storageError)
     })
     return () => { cancelled = true; unsubscribe() }
   }, [desktopPet])
@@ -411,16 +416,24 @@ export function Live2DOverlay({
 
   const openPicker = (): void => { fileInputRef.current?.click() }
 
+  const queuePersistence = (operation: () => Promise<void>): void => {
+    const next = persistencePromiseRef.current
+      .catch(() => undefined)
+      .then(operation)
+    persistencePromiseRef.current = next
+    void next.catch((storageError: unknown) => {
+      console.error('[ui-live2d] failed to persist model state', storageError)
+    })
+  }
+
   const onFilesSelected = (event: ChangeEvent<HTMLInputElement>): void => {
     const files = Array.from(event.currentTarget.files ?? [])
     event.currentTarget.value = ''
     try {
       const next = buildModelBundle(files)
+      modelRevisionRef.current += 1
       setModel(next)
-      savePromiseRef.current = saveModelBundle(next)
-      void savePromiseRef.current.catch((storageError: unknown) => {
-        console.error('[ui-live2d] failed to persist model bundle', storageError)
-      })
+      queuePersistence(() => saveModelBundle(next))
       setState('loading')
       setError(null)
       setProgress(0)
@@ -432,7 +445,9 @@ export function Live2DOverlay({
   }
 
   const removeModel = (): void => {
+    modelRevisionRef.current += 1
     setModel(null)
+    queuePersistence(clearModelBundle)
     setState('empty')
     setError(null)
     setControlsOpen(true)
@@ -1125,7 +1140,7 @@ export function Live2DOverlay({
             aria-label={desktopPet ? t('action.exitDesktopPet') : t('action.desktopPet')}
             onClick={() => {
               const next = model
-              void (savePromiseRef.current ?? Promise.resolve()).catch(() => undefined).then(() => {
+              void persistencePromiseRef.current.catch(() => undefined).then(() => {
                 window.location.assign('dsh://desktop-pet/toggle')
                 for (const delay of [500, 1500, 3000]) {
                   window.setTimeout(() => {

@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-26-live2d-model-startup-persistence.md
+2026-09-26-live2d-model-startup-persistence.md: a36ba6776aea1b4f06712b0ab924d6c9d3afa896
+2026-09-26-live2d-model-startup-persistence.zh.md: dc73ec704fa13d85aa8085094e99e6466396fa29
