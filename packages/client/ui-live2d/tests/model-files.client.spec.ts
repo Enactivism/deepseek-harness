@@ -36,6 +36,19 @@ describe('Live2D model file helpers', () => {
     expect(bundle.files).toHaveLength(2)
   })
 
+  it('excludes Qt directory placeholders from the model bundle', () => {
+    const bundle = buildModelBundle([
+      file('.', 'Haru/.'),
+      file('Haru.model3.json', 'Haru/Haru.model3.json'),
+      file('Haru.moc3', 'Haru/Haru.moc3'),
+    ])
+    expect(bundle.files.map(selected => selected.name)).toEqual([
+      'Haru.model3.json', 'Haru.moc3',
+    ])
+    expect(() => buildModelBundle([file('.', 'Haru/.')]))
+      .toThrow(new ModelImportError('no-files'))
+  })
+
   it.each([
     ['no-files', []],
     ['missing-entry', [file('Haru.moc3')]],

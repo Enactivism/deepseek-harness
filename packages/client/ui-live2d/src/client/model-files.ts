@@ -68,26 +68,28 @@ export function modelName(entryPath: string): string {
 }
 
 /**
- * Select and validate one Live2D model directory from a FileList.
+ * Select and validate one Live2D model directory from a FileList, excluding
+ * directory placeholders emitted by Qt WebEngine's folder picker.
  * @param files Browser-selected files.
  * @returns Validated model bundle.
  */
 export function buildModelBundle(files: readonly File[]): ModelBundle {
-  if (files.length === 0) throw new ModelImportError('no-files')
+  const modelFiles = files.filter(file => file.name !== '.' && file.name !== '..')
+  if (modelFiles.length === 0) throw new ModelImportError('no-files')
 
-  const entries = files.filter(file => /\.model(?:3)?\.json$/i.test(filePath(file)))
+  const entries = modelFiles.filter(file => /\.model(?:3)?\.json$/i.test(filePath(file)))
   if (entries.length === 0) throw new ModelImportError('missing-entry')
   if (entries.length > 1) throw new ModelImportError('multiple-entries')
 
   const entry = entries[0]
   if (entry === undefined) throw new ModelImportError('missing-entry')
-  const hasModelData = files.some(file => /\.(?:moc3?|moc)$/i.test(filePath(file)))
+  const hasModelData = modelFiles.some(file => /\.(?:moc3?|moc)$/i.test(filePath(file)))
   if (!hasModelData) throw new ModelImportError('missing-model-data')
 
   const entryPath = filePath(entry)
   return {
     name: modelName(entryPath),
     entryPath,
-    files: [...files],
+    files: modelFiles,
   }
 }

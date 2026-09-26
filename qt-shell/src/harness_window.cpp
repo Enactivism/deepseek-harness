@@ -113,8 +113,8 @@ QString petPageScript() {
 class HarnessWebPage final : public QWebEnginePage {
     Q_OBJECT
 public:
-    explicit HarnessWebPage(QObject *parent = nullptr)
-        : QWebEnginePage(parent) {}
+    explicit HarnessWebPage(QWebEngineProfile *profile, QObject *parent = nullptr)
+        : QWebEnginePage(profile, parent) {}
 
 protected:
     bool acceptNavigationRequest(const QUrl &url, NavigationType type, bool is_main_frame) override {
@@ -198,6 +198,7 @@ HarnessWindow::HarnessWindow(QWidget *parent)
       network_manager_(new QNetworkAccessManager(this)),
       readiness_timer_(new QTimer(this)),
       pet_pointer_timer_(new QTimer(this)),
+      web_profile_(new QWebEngineProfile(QStringLiteral("deepseek-harness"), this)),
       web_view_(new QWebEngineView(this)),
       state_view_(new QWidget(this)),
       state_icon_(new QLabel("DH", state_view_)),
@@ -209,6 +210,23 @@ HarnessWindow::HarnessWindow(QWidget *parent)
     setWindowTitle("DeepSeek Harness");
     setMinimumSize(960, 640);
     resize(1440, 920);
+
+    const auto app_data_path = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    const auto web_data_path = app_data_path.isEmpty()
+        ? QString()
+        : QDir(app_data_path).filePath(QStringLiteral("webengine"));
+    if (!web_data_path.isEmpty() && QDir().mkpath(web_data_path)) {
+        // IndexedDB stores the selected Live2D bundle here, outside the
+        // checkout, so a process restart retains the model without making it
+        // repository data.
+        web_profile_->setPersistentStoragePath(web_data_path);
+        web_profile_->setCachePath(QDir(web_data_path).filePath(QStringLiteral("cache")));
+    } else {
+        qWarning() << "[deepseek-harness-qt] Could not prepare WebEngine storage path:" << web_data_path;
+    }
+    web_profile_->setPersistentCookiesPolicy(QWebEngineProfile::AllowPersistentCookies);
+    web_profile_->setHttpUserAgent(
+        web_profile_->httpUserAgent() + QStringLiteral(" DeepSeekHarnessQt/1"));
 
     setStyleSheet(R"(
         QMainWindow {
@@ -311,9 +329,7 @@ HarnessWindow::HarnessWindow(QWidget *parent)
     web_view_->setStyleSheet("border: none; background: #10151e;");
     web_view_->settings()->setAttribute(QWebEngineSettings::WebGLEnabled, true);
     web_view_->settings()->setAttribute(QWebEngineSettings::Accelerated2dCanvasEnabled, true);
-    auto *web_page = new HarnessWebPage(web_view_);
-    web_page->profile()->setHttpUserAgent(
-        web_page->profile()->httpUserAgent() + QStringLiteral(" DeepSeekHarnessQt/1"));
+    auto *web_page = new HarnessWebPage(web_profile_, web_view_);
     web_view_->setPage(web_page);
     web_view_->installEventFilter(this);
     connect(web_page, &HarnessWebPage::desktopPetRequested,
@@ -351,9 +367,7 @@ HarnessWindow::HarnessWindow(QWidget *parent)
     pet_web_view_->setStyleSheet("border: none; background: transparent;");
     pet_web_view_->settings()->setAttribute(QWebEngineSettings::WebGLEnabled, true);
     pet_web_view_->settings()->setAttribute(QWebEngineSettings::Accelerated2dCanvasEnabled, true);
-    auto *pet_page = new HarnessWebPage(pet_web_view_);
-    pet_page->profile()->setHttpUserAgent(
-        pet_page->profile()->httpUserAgent() + QStringLiteral(" DeepSeekHarnessQt/1"));
+    auto *pet_page = new HarnessWebPage(web_profile_, pet_web_view_);
     QWebEngineScript pet_script;
     pet_script.setName(QStringLiteral("dsh-desktop-pet-surface"));
     pet_script.setInjectionPoint(QWebEngineScript::DocumentCreation);
@@ -392,9 +406,7 @@ HarnessWindow::HarnessWindow(QWidget *parent)
     chat_web_view_->setStyleSheet("border: none; background: #10151e;");
     chat_web_view_->settings()->setAttribute(QWebEngineSettings::WebGLEnabled, true);
     chat_web_view_->settings()->setAttribute(QWebEngineSettings::Accelerated2dCanvasEnabled, true);
-    auto *chat_page = new HarnessWebPage(chat_web_view_);
-    chat_page->profile()->setHttpUserAgent(
-        chat_page->profile()->httpUserAgent() + QStringLiteral(" DeepSeekHarnessQt/1"));
+    auto *chat_page = new HarnessWebPage(web_profile_, chat_web_view_);
     QWebEngineScript chat_script;
     chat_script.setName(QStringLiteral("dsh-desktop-pet-chat-surface"));
     chat_script.setInjectionPoint(QWebEngineScript::DocumentCreation);

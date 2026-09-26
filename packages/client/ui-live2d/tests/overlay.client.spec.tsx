@@ -88,6 +88,19 @@ describe('Live2D companion right workspace', () => {
     expect(screen.getByText('2 个文件')).toBeTruthy()
   })
 
+  it('shows an error when the saved model cannot be read', async () => {
+    loadModelBundle.mockRejectedValueOnce(new Error('storage failed'))
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      render(<Live2DOverlay {...props()} />)
+      await waitFor(() => {
+        expect(screen.getByRole('alert').textContent).toBe('无法读取已保存的模型，请重新选择模型文件夹。')
+      })
+    } finally {
+      consoleError.mockRestore()
+    }
+  })
+
   it('starts with a discoverable local upload state and can be hidden/restored', () => {
     render(<Live2DOverlay {...props()} />)
     expect(screen.getByText('上传你的模型')).toBeTruthy()
@@ -114,6 +127,21 @@ describe('Live2D companion right workspace', () => {
     expect(screen.getByRole('slider', { name: '透明度' })).toBeTruthy()
     fireEvent.change(screen.getByRole('slider', { name: '模型大小' }), { target: { value: '1.2' } })
     expect(screen.getByText('120%')).toBeTruthy()
+  })
+
+  it('shows an error when the selected model cannot be saved', async () => {
+    saveModelBundle.mockRejectedValueOnce(new Error('storage failed'))
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const view = render(<Live2DOverlay {...props()} />)
+      const input = view.container.querySelector('input[type="file"]')!
+      fireEvent.change(input, { target: { files: selectedFiles() } })
+      await waitFor(() => {
+        expect(screen.getByRole('alert').textContent).toBe('模型保存失败，请稍后重试。')
+      })
+    } finally {
+      consoleError.mockRestore()
+    }
   })
 
   it('clears the persisted model when the user removes it', async () => {

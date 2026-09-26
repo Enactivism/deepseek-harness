@@ -41,7 +41,7 @@ function openDatabase(): Promise<IDBDatabase> {
 }
 
 /**
- * Persist the selected model so an independent desktop-pet page can load it.
+ * Persist the selected model so every companion page can load it after startup.
  * @param bundle Model files and entry path to store.
  */
 export async function saveModelBundle(bundle: ModelBundle): Promise<void> {
@@ -59,10 +59,13 @@ export async function saveModelBundle(bundle: ModelBundle): Promise<void> {
   const database = await openDatabase()
   try {
     await new Promise<void>((resolve, reject) => {
-      const request = database.transaction(storeName, 'readwrite').objectStore(storeName)
+      const transaction = database.transaction(storeName, 'readwrite')
+      transaction.oncomplete = () => { resolve() }
+      transaction.onabort = () => {
+        reject(transaction.error ?? new Error('Live2D model storage failed'))
+      }
+      transaction.objectStore(storeName)
         .put({ name: bundle.name, entryPath: bundle.entryPath, files }, 'current')
-      request.onsuccess = () => { resolve() }
-      request.onerror = () => { reject(request.error ?? new Error('Live2D model storage failed')) }
     })
   } finally {
     database.close()
@@ -77,9 +80,12 @@ export async function clearModelBundle(): Promise<void> {
   const database = await openDatabase()
   try {
     await new Promise<void>((resolve, reject) => {
-      const request = database.transaction(storeName, 'readwrite').objectStore(storeName).delete('current')
-      request.onsuccess = () => { resolve() }
-      request.onerror = () => { reject(request.error ?? new Error('Live2D model storage failed')) }
+      const transaction = database.transaction(storeName, 'readwrite')
+      transaction.oncomplete = () => { resolve() }
+      transaction.onabort = () => {
+        reject(transaction.error ?? new Error('Live2D model storage failed'))
+      }
+      transaction.objectStore(storeName).delete('current')
     })
   } finally {
     database.close()
@@ -87,7 +93,7 @@ export async function clearModelBundle(): Promise<void> {
 }
 
 /**
- * Read the last selected model for the standalone desktop-pet page.
+ * Read the last selected model for a companion page.
  * @returns Stored model bundle, or null when no model is saved.
  */
 export async function loadModelBundle(): Promise<ModelBundle | null> {

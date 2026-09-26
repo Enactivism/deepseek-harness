@@ -360,6 +360,7 @@ export function Live2DOverlay({
       if (!cancelled && next !== null && modelRevisionRef.current === revision) setModel(next)
     }).catch((storageError: unknown) => {
       console.error('[ui-live2d] failed to restore model', storageError)
+      if (!cancelled && modelRevisionRef.current === revision) setError(t('error.restoreStorage'))
     })
     return () => { cancelled = true; unsubscribe() }
   }, [desktopPet])
@@ -416,13 +417,15 @@ export function Live2DOverlay({
 
   const openPicker = (): void => { fileInputRef.current?.click() }
 
-  const queuePersistence = (operation: () => Promise<void>): void => {
+  const queuePersistence = (operation: () => Promise<void>, failureKey: Live2DKey): void => {
+    const revision = modelRevisionRef.current
     const next = persistencePromiseRef.current
       .catch(() => undefined)
       .then(operation)
     persistencePromiseRef.current = next
     void next.catch((storageError: unknown) => {
       console.error('[ui-live2d] failed to persist model state', storageError)
+      if (modelRevisionRef.current === revision) setError(t(failureKey))
     })
   }
 
@@ -433,7 +436,7 @@ export function Live2DOverlay({
       const next = buildModelBundle(files)
       modelRevisionRef.current += 1
       setModel(next)
-      queuePersistence(() => saveModelBundle(next))
+      queuePersistence(() => saveModelBundle(next), 'error.storage')
       setState('loading')
       setError(null)
       setProgress(0)
@@ -447,7 +450,7 @@ export function Live2DOverlay({
   const removeModel = (): void => {
     modelRevisionRef.current += 1
     setModel(null)
-    queuePersistence(clearModelBundle)
+    queuePersistence(clearModelBundle, 'error.clearStorage')
     setState('empty')
     setError(null)
     setControlsOpen(true)

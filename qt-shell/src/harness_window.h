@@ -10,6 +10,7 @@ class QProgressBar;
 class QPushButton;
 class QStackedLayout;
 class QTimer;
+class QWebEngineProfile;
 class QWebEngineView;
 class QUrl;
 class QWidget;
@@ -49,6 +50,7 @@ private:
     QNetworkAccessManager *network_manager_;
     QTimer *readiness_timer_;
     QTimer *pet_pointer_timer_;
+    QWebEngineProfile *web_profile_;
     QWebEngineView *web_view_;
     QWidget *pet_window_ = nullptr;
     QWebEngineView *pet_web_view_ = nullptr;

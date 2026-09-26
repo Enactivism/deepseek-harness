@@ -90,6 +90,8 @@ export const zh = {
   'error.invalidModel': '模型入口文件不是有效的 JSON。',
   'error.runtime': 'Live2D 运行时初始化失败，请检查模型文件是否完整。',
   'error.storage': '模型保存失败，请稍后重试。',
+  'error.restoreStorage': '无法读取已保存的模型，请重新选择模型文件夹。',
+  'error.clearStorage': '无法删除已保存的模型，下次启动时可能再次出现。',
 } satisfies Record<string, string>
 
 /** Live2D dictionary key union. */
@@ -185,6 +187,8 @@ export const en = {
   'error.invalidModel': 'The model entry is not valid JSON.',
   'error.runtime': 'Live2D runtime initialization failed. Check that the model is complete.',
   'error.storage': 'The model could not be saved. Try again.',
+  'error.restoreStorage': 'The saved model could not be read. Choose the model folder again.',
+  'error.clearStorage': 'The saved model could not be removed and may reappear next time.',
 } satisfies Record<Live2DKey, string>
 
 /** Namespace used by the slot's locale seat. */
