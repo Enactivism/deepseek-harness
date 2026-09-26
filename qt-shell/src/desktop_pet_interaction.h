@@ -34,6 +34,7 @@ bool isPetControlArea(const QPoint &position,
 QString desktopPetScaleScript(double scale);
 
 /** Build the page event that lets Live2D follow a desktop-global pointer position. */
-QString pointerMoveScript(const QPoint &client_position);
+QString pointerMoveScript(const QPoint &client_position,
+                          const QPoint &screen_position);
 
 }  // namespace desktop_pet

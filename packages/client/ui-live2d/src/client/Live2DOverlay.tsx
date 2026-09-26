@@ -31,6 +31,11 @@ import { buildModelBundle, ModelImportError, type ModelBundle } from './model-fi
 import {
   GALGAME_CONTROL_PREFIX, GALGAME_STORY_CARD_MARKER, isGalgameControlMessage, parseGalgameReply,
 } from './galgame.ts'
+import {
+  DESKTOP_PET_PERSONA_STORAGE_KEY, DESKTOP_PET_PERSONA_TEXT_LIMIT, readDesktopPetPersona,
+  withDesktopPetPersona,
+  writeDesktopPetPersona,
+} from './desktop-pet-persona.ts'
 import { mountLive2D } from './renderer.ts'
 import { loadModelBundle, saveModelBundle } from './model-store.ts'
 import { broadcastModelBundle, subscribeToModelTransfer } from './model-transfer.ts'
@@ -253,6 +258,9 @@ export function Live2DOverlay({
     && new URLSearchParams(window.location.search).has('dshDesktopPetChat')
   const [chatOpen, setChatOpen] = useState(desktopPetChatWindow)
   const [chatDraft, setChatDraft] = useState('')
+  const [chatPersona, setChatPersona] = useState(() => readDesktopPetPersona())
+  const [chatPersonaDraft, setChatPersonaDraft] = useState(() => readDesktopPetPersona())
+  const [chatPersonaOpen, setChatPersonaOpen] = useState(false)
   const [galgameMode, setGalgameMode] = useState<GalgameMode | null>(() => readGalgameMode())
   const [galgameStoryActive, setGalgameStoryActive] = useState(() => readGalgameStoryActive())
   const [galgameStorySetup, setGalgameStorySetup] = useState(() => readGalgameStorySetup())
@@ -298,11 +306,15 @@ export function Live2DOverlay({
       if (event.key !== null && event.key !== GALGAME_MODE_STORAGE_KEY
         && event.key !== GALGAME_STORY_ACTIVE_STORAGE_KEY
         && event.key !== GALGAME_STORY_SETUP_STORAGE_KEY
-        && event.key !== GALGAME_FOCUS_MODE_STORAGE_KEY) return
+        && event.key !== GALGAME_FOCUS_MODE_STORAGE_KEY
+        && event.key !== DESKTOP_PET_PERSONA_STORAGE_KEY) return
       setGalgameMode(readGalgameMode())
       setGalgameStoryActive(readGalgameStoryActive())
       setGalgameStorySetup(readGalgameStorySetup())
       setGalgameFocusMode(readGalgameFocusMode())
+      const nextPersona = readDesktopPetPersona()
+      setChatPersona(nextPersona)
+      setChatPersonaDraft(nextPersona)
     }
     window.addEventListener('storage', syncGalgameMode)
     return () => { window.removeEventListener('storage', syncGalgameMode) }
@@ -430,7 +442,7 @@ export function Live2DOverlay({
     event.preventDefault()
     const text = chatDraft.trim()
     if (text === '') return
-    void sendPetMessage(text, 'chat').then((accepted) => {
+    void sendPetMessage(withDesktopPetPersona(text, chatPersona)).then((accepted) => {
       if (accepted) setChatDraft('')
     }).catch(() => undefined)
   }
@@ -446,6 +458,14 @@ export function Live2DOverlay({
     void answerPetApproval(outcome).then((accepted) => {
       if (!accepted) setApprovalAnswering(false)
     }).catch(() => { setApprovalAnswering(false) })
+  }
+
+  const submitPetPersona = (event: FormEvent<HTMLFormElement>): void => {
+    event.preventDefault()
+    const nextPersona = chatPersonaDraft.slice(0, DESKTOP_PET_PERSONA_TEXT_LIMIT)
+    setChatPersona(nextPersona)
+    writeDesktopPetPersona(nextPersona)
+    setChatPersonaOpen(false)
   }
 
   const setGalgameScreen = (mode: GalgameMode | null): void => {
@@ -466,7 +486,7 @@ export function Live2DOverlay({
   const submitGalgameMessage = (text: string, onAccepted?: () => void): void => {
     if (galgameSending) return
     setGalgameSending(true)
-    void sendPetMessage(text, 'galgame')
+    void sendPetMessage(withDesktopPetPersona(text, chatPersona), 'galgame')
       .then((accepted) => {
         if (accepted) onAccepted?.()
       })
@@ -669,6 +689,22 @@ export function Live2DOverlay({
               </p>
             </div>
             <div className={css.chatHeaderActions}>
+              {galgameMode === null && (
+                <button
+                  type="button"
+                  className={css.galgameHeaderButton}
+                  aria-label={chatPersonaOpen ? t('chat.persona.close') : t('chat.persona.open')}
+                  aria-pressed={chatPersonaOpen}
+                  disabled={petChat.running || petChat.sending || petChat.pendingApproval !== null}
+                  onClick={() => {
+                    setChatPersonaDraft(chatPersona)
+                    setChatPersonaOpen(open => !open)
+                  }}
+                >
+                  <IconSettingsOutline16 size={13} />
+                  {chatPersonaOpen ? t('chat.persona.close') : t('chat.persona.open')}
+                </button>
+              )}
               {galgameMode !== null && (
                 <button
                   type="button"
@@ -699,278 +735,299 @@ export function Live2DOverlay({
               </button>
             </div>
           </header>
-          {galgameMode === 'choose'
+          {galgameMode === null && chatPersonaOpen
             ? (
-              <div className={css.galgameChooser}>
-                <button
-                  type="button"
-                  className={css.galgameModeCard}
-                  disabled={petChat.status !== 'ready' || galgameSending || petChat.running
-                    || petChat.sending || petChat.pendingApproval !== null}
-                  onClick={() => { selectGalgameMode('free') }}
-                >
-                  <span className={css.galgameModeName}>{t('game.free')}</span>
-                  <span className={css.galgameModeDescription}>{t('game.freeDescription')}</span>
+              <form className={css.petPersonaSetup} onSubmit={submitPetPersona}>
+                <p className={css.galgameSetupHint}>{t('chat.persona.hint')}</p>
+                <label className={css.galgameSetupField}>
+                  <span>{t('chat.persona.label')}</span>
+                  <textarea
+                    className={css.galgameSetupInput}
+                    rows={6}
+                    maxLength={DESKTOP_PET_PERSONA_TEXT_LIMIT}
+                    value={chatPersonaDraft}
+                    placeholder={t('chat.persona.placeholder')}
+                    aria-label={t('chat.persona.label')}
+                    onChange={(event) => { setChatPersonaDraft(event.currentTarget.value) }}
+                  />
+                </label>
+                <button type="submit" className={css.galgameSetupSubmit}>
+                  {t('chat.persona.save')}
                 </button>
-                <button
-                  type="button"
-                  className={css.galgameModeCard}
-                  disabled={petChat.status !== 'ready' || galgameSending || petChat.running
-                    || petChat.sending || petChat.pendingApproval !== null}
-                  onClick={() => { selectGalgameMode('story') }}
-                >
-                  <span className={css.galgameModeName}>{t('game.story')}</span>
-                  <span className={css.galgameModeDescription}>{t('game.storyDescription')}</span>
-                </button>
-              </div>
+              </form>
             )
-            : (
-              <>
-                {galgameMode === 'setup' && (
-                  <form className={css.galgameStorySetup} onSubmit={startGalgameStory}>
-                    <p className={css.galgameSetupHint}>{t('game.setupHint')}</p>
-                    <label className={css.galgameSetupField}>
-                      <span>{t('game.storyToneLabel')}</span>
-                      <select
-                        className={css.galgameSetupSelect}
-                        value={galgameStorySetup.tone}
-                        onChange={(event) => {
-                          updateGalgameStorySetup({ ...galgameStorySetup, tone: event.currentTarget.value as GalgameTone })
-                        }}
-                      >
-                        {(Object.keys(galgameToneLabels) as GalgameTone[]).map(tone => (
-                          <option key={tone} value={tone}>{t(galgameToneLabels[tone])}</option>
-                        ))}
-                      </select>
-                    </label>
-                    <label className={css.galgameSetupField}>
-                      <span>{t('game.characterLabel')}</span>
-                      <textarea
-                        className={css.galgameSetupInput}
-                        rows={2}
-                        maxLength={GALGAME_SETUP_TEXT_LIMIT}
-                        value={galgameStorySetup.character}
-                        placeholder={t('game.characterPlaceholder')}
-                        onChange={(event) => {
-                          updateGalgameStorySetup({ ...galgameStorySetup, character: event.currentTarget.value })
-                        }}
-                      />
-                    </label>
-                    <label className={css.galgameSetupField}>
-                      <span>{t('game.playerRoleLabel')}</span>
-                      <textarea
-                        className={css.galgameSetupInput}
-                        rows={2}
-                        maxLength={GALGAME_SETUP_TEXT_LIMIT}
-                        value={galgameStorySetup.player}
-                        placeholder={t('game.playerRolePlaceholder')}
-                        onChange={(event) => {
-                          updateGalgameStorySetup({ ...galgameStorySetup, player: event.currentTarget.value })
-                        }}
-                      />
-                    </label>
-                    <label className={css.galgameSetupField}>
-                      <span>{t('game.scenarioLabel')}</span>
-                      <textarea
-                        className={css.galgameSetupInput}
-                        rows={3}
-                        maxLength={GALGAME_SETUP_TEXT_LIMIT}
-                        value={galgameStorySetup.scenario}
-                        placeholder={t('game.scenarioPlaceholder')}
-                        onChange={(event) => {
-                          updateGalgameStorySetup({ ...galgameStorySetup, scenario: event.currentTarget.value })
-                        }}
-                      />
-                    </label>
-                    <button
-                      type="submit"
-                      className={css.galgameSetupSubmit}
-                      disabled={petChat.status !== 'ready' || galgameSending || petChat.running
+            : galgameMode === 'choose'
+              ? (
+                <div className={css.galgameChooser}>
+                  <button
+                    type="button"
+                    className={css.galgameModeCard}
+                    disabled={petChat.status !== 'ready' || galgameSending || petChat.running
+                    || petChat.sending || petChat.pendingApproval !== null}
+                    onClick={() => { selectGalgameMode('free') }}
+                  >
+                    <span className={css.galgameModeName}>{t('game.free')}</span>
+                    <span className={css.galgameModeDescription}>{t('game.freeDescription')}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={css.galgameModeCard}
+                    disabled={petChat.status !== 'ready' || galgameSending || petChat.running
+                    || petChat.sending || petChat.pendingApproval !== null}
+                    onClick={() => { selectGalgameMode('story') }}
+                  >
+                    <span className={css.galgameModeName}>{t('game.story')}</span>
+                    <span className={css.galgameModeDescription}>{t('game.storyDescription')}</span>
+                  </button>
+                </div>
+              )
+              : (
+                <>
+                  {galgameMode === 'setup' && (
+                    <form className={css.galgameStorySetup} onSubmit={startGalgameStory}>
+                      <p className={css.galgameSetupHint}>{t('game.setupHint')}</p>
+                      <label className={css.galgameSetupField}>
+                        <span>{t('game.storyToneLabel')}</span>
+                        <select
+                          className={css.galgameSetupSelect}
+                          value={galgameStorySetup.tone}
+                          onChange={(event) => {
+                            updateGalgameStorySetup({ ...galgameStorySetup, tone: event.currentTarget.value as GalgameTone })
+                          }}
+                        >
+                          {(Object.keys(galgameToneLabels) as GalgameTone[]).map(tone => (
+                            <option key={tone} value={tone}>{t(galgameToneLabels[tone])}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className={css.galgameSetupField}>
+                        <span>{t('game.characterLabel')}</span>
+                        <textarea
+                          className={css.galgameSetupInput}
+                          rows={2}
+                          maxLength={GALGAME_SETUP_TEXT_LIMIT}
+                          value={galgameStorySetup.character}
+                          placeholder={t('game.characterPlaceholder')}
+                          onChange={(event) => {
+                            updateGalgameStorySetup({ ...galgameStorySetup, character: event.currentTarget.value })
+                          }}
+                        />
+                      </label>
+                      <label className={css.galgameSetupField}>
+                        <span>{t('game.playerRoleLabel')}</span>
+                        <textarea
+                          className={css.galgameSetupInput}
+                          rows={2}
+                          maxLength={GALGAME_SETUP_TEXT_LIMIT}
+                          value={galgameStorySetup.player}
+                          placeholder={t('game.playerRolePlaceholder')}
+                          onChange={(event) => {
+                            updateGalgameStorySetup({ ...galgameStorySetup, player: event.currentTarget.value })
+                          }}
+                        />
+                      </label>
+                      <label className={css.galgameSetupField}>
+                        <span>{t('game.scenarioLabel')}</span>
+                        <textarea
+                          className={css.galgameSetupInput}
+                          rows={3}
+                          maxLength={GALGAME_SETUP_TEXT_LIMIT}
+                          value={galgameStorySetup.scenario}
+                          placeholder={t('game.scenarioPlaceholder')}
+                          onChange={(event) => {
+                            updateGalgameStorySetup({ ...galgameStorySetup, scenario: event.currentTarget.value })
+                          }}
+                        />
+                      </label>
+                      <button
+                        type="submit"
+                        className={css.galgameSetupSubmit}
+                        disabled={petChat.status !== 'ready' || galgameSending || petChat.running
                       || petChat.sending || petChat.pendingApproval !== null}
-                    >
-                      {galgameStoryStarted ? t('game.applySetup') : t('game.startStory')}
-                    </button>
-                  </form>
-                )}
-                {galgameMode !== null && (
-                  <div className={css.galgameToolbar}>
-                    <div className={css.galgameModeTabs} role="tablist" aria-label={t('game.title')}>
-                      {(['free', 'story'] as const).map(mode => (
-                        <button
-                          key={mode}
-                          type="button"
-                          role="tab"
-                          aria-selected={galgameMode === mode}
-                          className={css.galgameModeTab}
-                          disabled={galgameSending || petChat.running || petChat.sending || petChat.pendingApproval !== null}
-                          onClick={() => { selectGalgameMode(mode) }}
-                        >
-                          {t(`game.${mode}`)}
-                        </button>
-                      ))}
-                    </div>
-                    {galgameMode === 'story' && (
-                      <div className={css.galgamePresentationActions}>
-                        <button
-                          type="button"
-                          className={css.galgameModeTab}
-                          aria-pressed={galgameFocusMode}
-                          onClick={toggleGalgameFocusMode}
-                        >
-                          {galgameFocusMode ? t('game.showHistory') : t('game.focus')}
-                        </button>
-                        <button
-                          type="button"
-                          className={css.galgameModeTab}
-                          disabled={galgameSending || petChat.running || petChat.sending
-                            || petChat.pendingApproval !== null}
-                          onClick={() => { setGalgameScreen('setup') }}
-                        >
-                          {t('game.editSetup')}
-                        </button>
+                      >
+                        {galgameStoryStarted ? t('game.applySetup') : t('game.startStory')}
+                      </button>
+                    </form>
+                  )}
+                  {galgameMode !== null && (
+                    <div className={css.galgameToolbar}>
+                      <div className={css.galgameModeTabs} role="tablist" aria-label={t('game.title')}>
+                        {(['free', 'story'] as const).map(mode => (
+                          <button
+                            key={mode}
+                            type="button"
+                            role="tab"
+                            aria-selected={galgameMode === mode}
+                            className={css.galgameModeTab}
+                            disabled={galgameSending || petChat.running || petChat.sending || petChat.pendingApproval !== null}
+                            onClick={() => { selectGalgameMode(mode) }}
+                          >
+                            {t(`game.${mode}`)}
+                          </button>
+                        ))}
                       </div>
+                      {galgameMode === 'story' && (
+                        <div className={css.galgamePresentationActions}>
+                          <button
+                            type="button"
+                            className={css.galgameModeTab}
+                            aria-pressed={galgameFocusMode}
+                            onClick={toggleGalgameFocusMode}
+                          >
+                            {galgameFocusMode ? t('game.showHistory') : t('game.focus')}
+                          </button>
+                          <button
+                            type="button"
+                            className={css.galgameModeTab}
+                            disabled={galgameSending || petChat.running || petChat.sending
+                            || petChat.pendingApproval !== null}
+                            onClick={() => { setGalgameScreen('setup') }}
+                          >
+                            {t('game.editSetup')}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  <div
+                    className={css.chatMessages}
+                    data-galgame-focus={galgameMode === 'story' && galgameFocusMode || undefined}
+                    aria-live="polite"
+                  >
+                    {petChat.status === 'loading' && (
+                      <p className={css.chatNotice}>{t('chat.loading')}</p>
                     )}
-                  </div>
-                )}
-                <div
-                  className={css.chatMessages}
-                  data-galgame-focus={galgameMode === 'story' && galgameFocusMode || undefined}
-                  aria-live="polite"
-                >
-                  {petChat.status === 'loading' && (
-                    <p className={css.chatNotice}>{t('chat.loading')}</p>
-                  )}
-                  {petChat.status === 'ready' && displayedPetMessages.length === 0 && (
-                    <p className={css.chatNotice}>
-                      {galgameMode === 'story' ? t('game.storyEmpty') : t('chat.empty')}
-                    </p>
-                  )}
-                  {displayedPetMessages.map((message) => {
-                    const storyReply = galgameMode === 'story' && message.role === 'assistant'
-                      ? parseGalgameReply(message.text)
-                      : null
-                    const visibleText = storyReply?.narrative ?? message.text
-                    const isLatestAssistant = lastPetMessage?.id === message.id
-                    return message.role === 'user'
-                      ? (
-                        <p key={message.id} className={css.chatMessageUser}>
-                          {message.text}
-                        </p>
-                      )
-                      : (
-                        <div
-                          key={message.id}
-                          className={css.chatMessageAssistant}
-                          data-streaming={message.streaming || undefined}
-                        >
-                          {visibleText !== '' && (
-                            <MarkdownText text={visibleText} streaming={message.streaming === true} />
-                          )}
-                          {storyReply !== null && storyReply.choices !== null
+                    {petChat.status === 'ready' && displayedPetMessages.length === 0 && (
+                      <p className={css.chatNotice}>
+                        {galgameMode === 'story' ? t('game.storyEmpty') : t('chat.empty')}
+                      </p>
+                    )}
+                    {displayedPetMessages.map((message) => {
+                      const storyReply = galgameMode === 'story' && message.role === 'assistant'
+                        ? parseGalgameReply(message.text)
+                        : null
+                      const visibleText = storyReply?.narrative ?? message.text
+                      const isLatestAssistant = lastPetMessage?.id === message.id
+                      return message.role === 'user'
+                        ? (
+                          <p key={message.id} className={css.chatMessageUser}>
+                            {message.text}
+                          </p>
+                        )
+                        : (
+                          <div
+                            key={message.id}
+                            className={css.chatMessageAssistant}
+                            data-streaming={message.streaming || undefined}
+                          >
+                            {visibleText !== '' && (
+                              <MarkdownText text={visibleText} streaming={message.streaming === true} />
+                            )}
+                            {storyReply !== null && storyReply.choices !== null
                             && !message.streaming && isLatestAssistant && (
-                            <div className={css.galgameChoices}>
-                              <p className={css.galgameChoiceHint}>{t('game.chooseHint')}</p>
-                              {storyReply.choices.map((choice, index) => (
-                                <button
-                                  key={`${message.id}-choice-${index + 1}`}
-                                  type="button"
-                                  className={css.galgameChoiceButton}
-                                  disabled={galgameSending || petChat.running || petChat.sending
+                              <div className={css.galgameChoices}>
+                                <p className={css.galgameChoiceHint}>{t('game.chooseHint')}</p>
+                                {storyReply.choices.map((choice, index) => (
+                                  <button
+                                    key={`${message.id}-choice-${index + 1}`}
+                                    type="button"
+                                    className={css.galgameChoiceButton}
+                                    disabled={galgameSending || petChat.running || petChat.sending
                                     || petChat.pendingApproval !== null}
-                                  onClick={() => { submitStoryChoice(choice) }}
-                                >
-                                  <span className={css.galgameChoiceNumber}>{index + 1}</span>
-                                  <span>{choice}</span>
-                                </button>
-                              ))}
-                            </div>
-                          )}
-                          {storyReply !== null && storyReply.choices === null
+                                    onClick={() => { submitStoryChoice(choice) }}
+                                  >
+                                    <span className={css.galgameChoiceNumber}>{index + 1}</span>
+                                    <span>{choice}</span>
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                            {storyReply !== null && storyReply.choices === null
                             && !message.streaming && isLatestAssistant && !petChat.running && (
-                            <div className={css.galgameRetry}>
-                              <p>{t('game.noChoices')}</p>
-                              <button
-                                type="button"
-                                className={css.galgameRetryButton}
-                                disabled={galgameSending || petChat.sending || petChat.pendingApproval !== null}
-                                onClick={retryStoryChoices}
-                              >
-                                {t('game.retryChoices')}
-                              </button>
-                            </div>
+                              <div className={css.galgameRetry}>
+                                <p>{t('game.noChoices')}</p>
+                                <button
+                                  type="button"
+                                  className={css.galgameRetryButton}
+                                  disabled={galgameSending || petChat.sending || petChat.pendingApproval !== null}
+                                  onClick={retryStoryChoices}
+                                >
+                                  {t('game.retryChoices')}
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        )
+                    })}
+                    {petChat.pendingApproval !== null && (
+                      <section className={css.chatApproval} data-approval-key={petChat.pendingApproval.key}>
+                        <div className={css.chatApprovalHeader}>
+                          <span className={css.chatApprovalDot} aria-hidden="true" />
+                          {t('chat.approval.waiting')}
+                        </div>
+                        <div
+                          className={css.chatApprovalBody}
+                          data-approval-scroll=""
+                          tabIndex={0}
+                          role="group"
+                          aria-label={t('chat.approval.detailAria')}
+                        >
+                          <p className={css.chatApprovalReason}>
+                            {petChat.pendingApproval.reason
+                            ?? t('chat.approval.escalation', { toolName: petChat.pendingApproval.toolName })}
+                          </p>
+                          {petChat.pendingApproval.command !== undefined && (
+                            <p className={css.chatApprovalCommand}>{petChat.pendingApproval.command}</p>
                           )}
                         </div>
-                      )
-                  })}
-                  {petChat.pendingApproval !== null && (
-                    <section className={css.chatApproval} data-approval-key={petChat.pendingApproval.key}>
-                      <div className={css.chatApprovalHeader}>
-                        <span className={css.chatApprovalDot} aria-hidden="true" />
-                        {t('chat.approval.waiting')}
-                      </div>
-                      <div
-                        className={css.chatApprovalBody}
-                        data-approval-scroll=""
-                        tabIndex={0}
-                        role="group"
-                        aria-label={t('chat.approval.detailAria')}
+                        <div className={css.chatApprovalActions}>
+                          <Button
+                            variant="outline"
+                            className={css.chatApprovalReject}
+                            disabled={approvalAnswering}
+                            onClick={() => { submitPetApproval('rejected') }}
+                          >
+                            {t('chat.approval.reject')}
+                          </Button>
+                          <Button
+                            variant="primary"
+                            disabled={approvalAnswering}
+                            onClick={() => { submitPetApproval('allowed-once') }}
+                          >
+                            {t('chat.approval.allowOnce')}
+                          </Button>
+                        </div>
+                      </section>
+                    )}
+                    {petChat.running && (
+                      <p className={css.chatThinking}>{t('chat.thinking')}</p>
+                    )}
+                    <div ref={chatEndRef} />
+                  </div>
+                  {galgameMode !== 'story' && (
+                    <form className={css.chatComposer} onSubmit={submitPetChat}>
+                      <textarea
+                        className={css.chatInput}
+                        rows={1}
+                        value={chatDraft}
+                        placeholder={t('chat.placeholder')}
+                        aria-label={t('chat.placeholder')}
+                        disabled={!sessionsReady || galgameSending || petChat.sending || petChat.pendingApproval !== null}
+                        onChange={(event) => { setChatDraft(event.currentTarget.value) }}
+                        onKeyDown={onPetChatKeyDown}
+                      />
+                      <button
+                        type="submit"
+                        className={css.chatSend}
+                        aria-label={petChat.sending ? t('chat.sending') : t('chat.send')}
+                        disabled={!sessionsReady || galgameSending || petChat.sending || petChat.pendingApproval !== null || chatDraft.trim() === ''}
                       >
-                        <p className={css.chatApprovalReason}>
-                          {petChat.pendingApproval.reason
-                            ?? t('chat.approval.escalation', { toolName: petChat.pendingApproval.toolName })}
-                        </p>
-                        {petChat.pendingApproval.command !== undefined && (
-                          <p className={css.chatApprovalCommand}>{petChat.pendingApproval.command}</p>
-                        )}
-                      </div>
-                      <div className={css.chatApprovalActions}>
-                        <Button
-                          variant="outline"
-                          className={css.chatApprovalReject}
-                          disabled={approvalAnswering}
-                          onClick={() => { submitPetApproval('rejected') }}
-                        >
-                          {t('chat.approval.reject')}
-                        </Button>
-                        <Button
-                          variant="primary"
-                          disabled={approvalAnswering}
-                          onClick={() => { submitPetApproval('allowed-once') }}
-                        >
-                          {t('chat.approval.allowOnce')}
-                        </Button>
-                      </div>
-                    </section>
+                        <IconSendOutline16 size={16} />
+                      </button>
+                    </form>
                   )}
-                  {petChat.running && (
-                    <p className={css.chatThinking}>{t('chat.thinking')}</p>
-                  )}
-                  <div ref={chatEndRef} />
-                </div>
-                {galgameMode !== 'story' && (
-                  <form className={css.chatComposer} onSubmit={submitPetChat}>
-                    <textarea
-                      className={css.chatInput}
-                      rows={1}
-                      value={chatDraft}
-                      placeholder={t('chat.placeholder')}
-                      aria-label={t('chat.placeholder')}
-                      disabled={!sessionsReady || galgameSending || petChat.sending || petChat.pendingApproval !== null}
-                      onChange={(event) => { setChatDraft(event.currentTarget.value) }}
-                      onKeyDown={onPetChatKeyDown}
-                    />
-                    <button
-                      type="submit"
-                      className={css.chatSend}
-                      aria-label={petChat.sending ? t('chat.sending') : t('chat.send')}
-                      disabled={!sessionsReady || galgameSending || petChat.sending || petChat.pendingApproval !== null || chatDraft.trim() === ''}
-                    >
-                      <IconSendOutline16 size={16} />
-                    </button>
-                  </form>
-                )}
-              </>
-            )}
+                </>
+              )}
           {petChat.error !== null && (
             <p className={css.chatError} role="alert">
               {t('chat.error', { message: petChat.error })}

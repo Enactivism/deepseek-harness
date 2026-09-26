@@ -693,6 +693,7 @@ void HarnessWindow::toggleDesktopPet() {
 void HarnessWindow::setDesktopPet(bool enabled) {
     if (desktop_pet_ == enabled) return;
     desktop_pet_ = enabled;
+    pet_page_ready_ = false;
     scale_wheel_remainder_ = 0;
     if (enabled) {
         pet_window_->resize(kPetBaseSize);
@@ -701,12 +702,12 @@ void HarnessWindow::setDesktopPet(bool enabled) {
         pet_web_view_->setUrl(QUrl(QStringLiteral("%1/?dshDesktopPet=1").arg(kHarnessUrl)));
         pet_window_->show();
         pet_window_->raise();
-        last_pet_pointer_valid_ = false;
         if (desktop_pet::supportsGlobalPointerTracking(QGuiApplication::platformName())) {
             pet_pointer_timer_->start();
         }
     } else {
         dragging_ = false;
+        pet_page_ready_ = false;
         pet_pointer_timer_->stop();
         setDesktopPetChat(false);
         pet_window_->hide();
@@ -735,7 +736,8 @@ void HarnessWindow::setDesktopPetChat(bool open) {
 }
 
 void HarnessWindow::preparePetPage(bool ok) {
-    if (!desktop_pet_ || !ok) return;
+    pet_page_ready_ = desktop_pet_ && ok;
+    if (!pet_page_ready_) return;
     // QWebEngineView creates its native render widget lazily. Configure the
     // child after navigation as well as the view itself, otherwise that child
     // can paint an opaque rectangle over the translucent top-level window.
@@ -750,7 +752,6 @@ void HarnessWindow::preparePetPage(bool ok) {
         child->setPalette(palette);
     }
     pet_web_view_->page()->runJavaScript(QString::fromUtf8(kPetPageScript));
-    last_pet_pointer_valid_ = false;
     updateDesktopPetPointer();
 }
 
@@ -778,13 +779,13 @@ void HarnessWindow::notifyDesktopPetChatVisibility(bool open) {
 void HarnessWindow::updateDesktopPetPointer() {
     if (!desktop_pet_
         || !pet_window_->isVisible()
+        || !pet_page_ready_
         || !desktop_pet::supportsGlobalPointerTracking(QGuiApplication::platformName())) return;
-    const QPoint client_position = pet_web_view_->mapFromGlobal(QCursor::pos());
-    if (last_pet_pointer_valid_ && client_position == last_pet_pointer_) return;
-    last_pet_pointer_ = client_position;
-    last_pet_pointer_valid_ = true;
+    const QPoint screen_position = QCursor::pos();
+    const QPoint client_position = pet_web_view_->mapFromGlobal(screen_position);
     pet_web_view_->page()->runJavaScript(
-        desktop_pet::pointerMoveScript(client_position), QWebEngineScript::MainWorld);
+        desktop_pet::pointerMoveScript(client_position, screen_position),
+        QWebEngineScript::MainWorld);
 }
 
 bool HarnessWindow::eventFilter(QObject *watched, QEvent *event) {

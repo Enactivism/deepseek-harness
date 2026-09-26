@@ -54,7 +54,11 @@ describe('desktop-pet chat controller', () => {
 
     await runtime.updateSnapshot('pet', (draft) => {
       draft.nodes = [
-        { kind: 'user', seq: 1, time: 1, content: [{ type: 'text', text: '你好' }], source: null },
+        {
+          kind: 'user', seq: 1, time: 1,
+          content: [{ type: 'text', text: '[Desktop pet persona]\n你是一只猫耳桌宠。\n\n你好' }],
+          source: null,
+        },
         { kind: 'context', seq: 2, time: 2, content: [{ type: 'text', text: '隐藏' }], source: null, provenance: { kind: 'unknown' }, form: null } as never,
         { kind: 'assistant', seq: 3, time: 3, turn: 1, step: 1, blocks: [
           { kind: 'reasoning', text: '不显示' }, { kind: 'text', text: '你好呀' },

@@ -55,10 +55,14 @@ QString desktopPetScaleScript(double scale) {
         .arg(QString::number(scale, 'f', 6));
 }
 
-QString pointerMoveScript(const QPoint &client_position) {
+QString pointerMoveScript(const QPoint &client_position,
+                          const QPoint &screen_position) {
     return QStringLiteral(
         "document.dispatchEvent(new MouseEvent('mousemove', {"
-        "bubbles: true, cancelable: true, clientX: %1, clientY: %2}));")
+        "bubbles: true, cancelable: true, view: window, "
+        "screenX: %1, screenY: %2, clientX: %3, clientY: %4}));")
+        .arg(screen_position.x())
+        .arg(screen_position.y())
         .arg(client_position.x())
         .arg(client_position.y());
 }

@@ -60,10 +60,14 @@ int main() {
                && scale_script.contains(QStringLiteral("scale: 1.066667")),
            "the synchronized window scale must be sent to the page");
 
-    const QString pointer_script = desktop_pet::pointerMoveScript({-32, 600});
+    const QString pointer_script = desktop_pet::pointerMoveScript({-32, 600}, {1920, 1300});
     expect(pointer_script.contains(QStringLiteral("clientX: -32")),
            "pointer script must preserve coordinates left of the pet window");
     expect(pointer_script.contains(QStringLiteral("clientY: 600")),
            "pointer script must preserve coordinates below the pet window");
+    expect(pointer_script.contains(QStringLiteral("screenX: 1920"))
+               && pointer_script.contains(QStringLiteral("screenY: 1300"))
+               && pointer_script.contains(QStringLiteral("view: window")),
+           "pointer script must retain the global event fields used by page listeners");
     return failures == 0 ? 0 : 1;
 }

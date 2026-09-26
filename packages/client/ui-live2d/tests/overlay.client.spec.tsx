@@ -20,6 +20,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup()
   mountLive2D.mockClear()
+  window.localStorage.removeItem('dsh.live2d.desktop-pet-persona')
   window.history.replaceState({}, '', '/')
   Reflect.deleteProperty(HTMLElement.prototype, 'scrollIntoView')
 })
@@ -115,6 +116,27 @@ describe('Live2D companion right workspace', () => {
     fireEvent.keyDown(input, { key: 'Enter' })
     await waitFor(() => { expect(sendPetMessage).toHaveBeenCalledWith('你好，桌宠') })
     await waitFor(() => { expect((input as HTMLTextAreaElement).value).toBe('') })
+  })
+
+  it('saves an isolated personality prompt and attaches it to the next pet message', async () => {
+    window.history.replaceState({}, '', '/?dshDesktopPet=1')
+    const sendPetMessage = vi.fn(() => Promise.resolve(true))
+    render(<Live2DOverlay {...props({ sendPetMessage })} />)
+
+    fireEvent.click(screen.getByRole('button', { name: '打开桌宠聊天' }))
+    fireEvent.click(screen.getByRole('button', { name: '设置人格' }))
+    const persona = screen.getByRole('textbox', { name: '人格提示词' })
+    fireEvent.change(persona, { target: { value: '你是一只温柔的猫耳桌宠。' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存人格设定' }))
+
+    const input = screen.getByRole('textbox', { name: '输入消息…' })
+    fireEvent.change(input, { target: { value: '早上好' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    await waitFor(() => {
+      expect(sendPetMessage).toHaveBeenCalledWith(
+        '[Desktop pet persona]\n你是一只温柔的猫耳桌宠。\n\n早上好',
+      )
+    })
   })
 
   it('renders settled assistant Markdown, including display math and fenced code', () => {

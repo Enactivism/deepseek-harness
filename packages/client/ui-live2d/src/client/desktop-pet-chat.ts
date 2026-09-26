@@ -10,6 +10,7 @@ import type {
   SessionId,
   ToolCallBlock,
 } from '@deepseek-ai/dsh-client-runtime/client'
+import { displayDesktopPetMessage } from './desktop-pet-persona.ts'
 
 const PET_SESSION_STORAGE_KEY = 'dsh.live2d.desktop-pet-session'
 const GALGAME_SESSION_STORAGE_KEY = 'dsh.live2d.galgame-session'
@@ -91,7 +92,9 @@ const INITIAL_VIEW: DesktopPetChatView = {
 }
 
 function userText(node: Extract<ConversationNode, { kind: 'user' | 'steering' }>): string {
-  return node.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('\n')
+  return displayDesktopPetMessage(
+    node.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('\n'),
+  )
 }
 
 function assistantText(node: Extract<ConversationNode, { kind: 'assistant' }>): string {
@@ -204,10 +207,11 @@ export class DesktopPetChatController implements ObservableSnapshot<DesktopPetCh
    * @returns the Session id for the selected mode.
    */
   activate(mode: DesktopPetChatMode = 'chat'): Promise<SessionId> {
+    const wasActive = this.activeMode === mode
     this.activeMode = mode
     const current = this.petSessions.get(mode)
     if (current !== undefined) {
-      this.sessions.openTransient(current.sessionId)
+      if (!wasActive) this.sessions.openTransient(current.sessionId)
       this.publishSession()
       return Promise.resolve(current.sessionId)
     }
