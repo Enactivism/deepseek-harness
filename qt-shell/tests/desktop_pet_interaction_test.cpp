@@ -69,5 +69,30 @@ int main() {
                && pointer_script.contains(QStringLiteral("screenY: 1300"))
                && pointer_script.contains(QStringLiteral("view: window")),
            "pointer script must retain the global event fields used by page listeners");
+
+    const QString hover_frame_script = desktop_pet::desktopPetHoverFrameScript();
+    expect(hover_frame_script.contains(QStringLiteral("dsh-desktop-pet-hover-frame"))
+               && hover_frame_script.contains(
+                   QStringLiteral("border: '3px solid rgb(57, 255, 136)'"))
+               && hover_frame_script.contains(QStringLiteral("pointerEvents: 'none'")),
+           "the hover frame must draw a non-interactive green window edge");
+    expect(hover_frame_script.contains(QStringLiteral("duration: 700"))
+               && hover_frame_script.contains(
+                   QStringLiteral("'dsh-desktop-pet-hover-frame-visibility'"))
+               && hover_frame_script.contains(QStringLiteral("animation.play()"))
+               && hover_frame_script.contains(QStringLiteral("animation.cancel()")),
+           "native hover updates must start and stop the frame pulse");
+    expect(hover_frame_script.contains(QStringLiteral("dshDesktopPetChat")),
+           "the separate chat window must opt out of the pet hover frame");
+
+    const QString hover_visible_script =
+        desktop_pet::desktopPetHoverFrameVisibilityScript(true);
+    const QString hover_hidden_script =
+        desktop_pet::desktopPetHoverFrameVisibilityScript(false);
+    expect(hover_visible_script.contains(QStringLiteral("visible:true"))
+               && hover_hidden_script.contains(QStringLiteral("visible:false"))
+               && hover_visible_script.contains(
+                   QStringLiteral("dsh-desktop-pet-hover-frame-visibility")),
+           "the native window must send both hover-frame visibility states");
     return failures == 0 ? 0 : 1;
 }

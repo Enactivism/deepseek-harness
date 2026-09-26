@@ -37,4 +37,10 @@ QString desktopPetScaleScript(double scale);
 QString pointerMoveScript(const QPoint &client_position,
                           const QPoint &screen_position);
 
+/** Build the pointer-controlled flashing frame for the frameless pet window. */
+QString desktopPetHoverFrameScript();
+
+/** Build the page event that explicitly updates the pet hover-frame visibility. */
+QString desktopPetHoverFrameVisibilityScript(bool visible);
+
 }  // namespace desktop_pet

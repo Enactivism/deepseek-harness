@@ -76,6 +76,8 @@ constexpr auto kPetPageScript = R"JS(
     for (let node = companion.parentElement; node && node !== body; node = node.parentElement) {
       keep.add(node);
     }
+    const hoverFrame = document.getElementById('dsh-desktop-pet-hover-frame');
+    if (hoverFrame) keep.add(hoverFrame);
     for (const child of body.querySelectorAll('*')) {
       if (!keep.has(child) && !companion.contains(child)) {
         child.style.setProperty('display', 'none', 'important');
@@ -103,6 +105,10 @@ constexpr auto kPetPageScript = R"JS(
   applyPetSurface();
 })();
 )JS";
+
+QString petPageScript() {
+    return QString::fromUtf8(kPetPageScript) + desktop_pet::desktopPetHoverFrameScript();
+}
 
 class HarnessWebPage final : public QWebEnginePage {
     Q_OBJECT
@@ -352,7 +358,7 @@ HarnessWindow::HarnessWindow(QWidget *parent)
     pet_script.setName(QStringLiteral("dsh-desktop-pet-surface"));
     pet_script.setInjectionPoint(QWebEngineScript::DocumentCreation);
     pet_script.setWorldId(QWebEngineScript::MainWorld);
-    pet_script.setSourceCode(QString::fromUtf8(kPetPageScript));
+    pet_script.setSourceCode(petPageScript());
     pet_page->scripts().insert(pet_script);
     pet_web_view_->setPage(pet_page);
     pet_page->setBackgroundColor(Qt::transparent);
@@ -393,7 +399,7 @@ HarnessWindow::HarnessWindow(QWidget *parent)
     chat_script.setName(QStringLiteral("dsh-desktop-pet-chat-surface"));
     chat_script.setInjectionPoint(QWebEngineScript::DocumentCreation);
     chat_script.setWorldId(QWebEngineScript::MainWorld);
-    chat_script.setSourceCode(QString::fromUtf8(kPetPageScript));
+    chat_script.setSourceCode(petPageScript());
     chat_page->scripts().insert(chat_script);
     chat_web_view_->setPage(chat_page);
     chat_page->setBackgroundColor(QColor("#10151e"));
@@ -694,6 +700,7 @@ void HarnessWindow::setDesktopPet(bool enabled) {
     if (desktop_pet_ == enabled) return;
     desktop_pet_ = enabled;
     pet_page_ready_ = false;
+    pet_pointer_inside_ = false;
     scale_wheel_remainder_ = 0;
     if (enabled) {
         pet_window_->resize(kPetBaseSize);
@@ -751,13 +758,14 @@ void HarnessWindow::preparePetPage(bool ok) {
         palette.setColor(QPalette::Window, Qt::transparent);
         child->setPalette(palette);
     }
-    pet_web_view_->page()->runJavaScript(QString::fromUtf8(kPetPageScript));
+    pet_web_view_->page()->runJavaScript(petPageScript());
+    setDesktopPetHover(pet_pointer_inside_, true);
     updateDesktopPetPointer();
 }
 
 void HarnessWindow::preparePetChatPage(bool ok) {
     if (!desktop_pet_ || !ok || chat_web_view_ == nullptr) return;
-    chat_web_view_->page()->runJavaScript(QString::fromUtf8(kPetPageScript));
+    chat_web_view_->page()->runJavaScript(petPageScript());
     if (chat_window_ != nullptr && chat_window_->isVisible()) {
         notifyDesktopPetChatVisibility(true);
     }
@@ -779,12 +787,22 @@ void HarnessWindow::notifyDesktopPetChatVisibility(bool open) {
 void HarnessWindow::updateDesktopPetPointer() {
     if (!desktop_pet_
         || !pet_window_->isVisible()
-        || !pet_page_ready_
         || !desktop_pet::supportsGlobalPointerTracking(QGuiApplication::platformName())) return;
     const QPoint screen_position = QCursor::pos();
+    setDesktopPetHover(pet_window_->frameGeometry().contains(screen_position));
+    if (!pet_page_ready_) return;
     const QPoint client_position = pet_web_view_->mapFromGlobal(screen_position);
     pet_web_view_->page()->runJavaScript(
         desktop_pet::pointerMoveScript(client_position, screen_position),
+        QWebEngineScript::MainWorld);
+}
+
+void HarnessWindow::setDesktopPetHover(bool inside, bool force) {
+    const bool changed = pet_pointer_inside_ != inside;
+    pet_pointer_inside_ = inside;
+    if ((!changed && !force) || !desktop_pet_ || !pet_page_ready_) return;
+    pet_web_view_->page()->runJavaScript(
+        desktop_pet::desktopPetHoverFrameVisibilityScript(inside),
         QWebEngineScript::MainWorld);
 }
 
@@ -799,13 +817,28 @@ bool HarnessWindow::eventFilter(QObject *watched, QEvent *event) {
     if (mouse_event != nullptr) {
         global_position = mouse_event->globalPosition().toPoint();
     }
-    const bool inside_pet_window = mouse_event != nullptr && pet_window_ != nullptr
-        && pet_window_->frameGeometry().contains(global_position);
-    const bool is_pet_target = desktop_pet_
+    const bool is_pet_widget = desktop_pet_
         && (watched == pet_window_
             || watched == pet_web_view_
-            || (widget != nullptr && pet_window_ != nullptr && pet_window_->isAncestorOf(widget))
-            || inside_pet_window);
+            || (widget != nullptr && pet_window_ != nullptr && pet_window_->isAncestorOf(widget)));
+    const bool inside_pet_window = mouse_event != nullptr && pet_window_ != nullptr
+        && pet_window_->frameGeometry().contains(global_position);
+    if (desktop_pet_ && mouse_event != nullptr) {
+        setDesktopPetHover(is_pet_widget || inside_pet_window);
+    } else if (is_pet_widget && event->type() == QEvent::Enter) {
+        setDesktopPetHover(true);
+    } else if (is_pet_widget && event->type() == QEvent::Leave) {
+        QTimer::singleShot(0, this, [this] {
+            if (!desktop_pet_ || pet_window_ == nullptr || !pet_window_->isVisible()) return;
+            if (desktop_pet::supportsGlobalPointerTracking(QGuiApplication::platformName())) {
+                setDesktopPetHover(pet_window_->frameGeometry().contains(QCursor::pos()));
+                return;
+            }
+            setDesktopPetHover(pet_window_->underMouse() || pet_web_view_->underMouse());
+        });
+    }
+    const bool is_pet_target = desktop_pet_
+        && (is_pet_widget || inside_pet_window);
     const bool control_interaction = is_pet_target && mouse_event != nullptr
         && desktop_pet::isPetControlArea(
             pet_window_->mapFromGlobal(global_position),
