@@ -66,7 +66,7 @@ const props = (over: Partial<Live2DOverlayProps> = {}): Live2DOverlayProps => ({
   ...over,
 })
 
-function selectedFiles(): File[] {
+function selectedFiles(): [File, File] {
   const entry = new File(['{"FileReferences":{"Moc":"Haru.moc3"}}'], 'Haru.model3.json', {
     type: 'application/json',
   })
