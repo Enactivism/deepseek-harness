@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-25-desktop-pet-pointer-refresh.md
-2026-09-25-desktop-pet-pointer-refresh.md: ac5c1ae7543f40f6a39b1c96a28a1ddd8c70a9b2
-2026-09-25-desktop-pet-pointer-refresh.zh.md: 0e74c64407a4a87f05d69ff2d4a09760c515550a
+2026-09-25-desktop-pet-pointer-refresh.md: eb3f59b5a8dd679cf8fdd1db5e5de58dafea5926
+2026-09-25-desktop-pet-pointer-refresh.zh.md: 09fdf31910e2721a2626316e45506dab99f02670

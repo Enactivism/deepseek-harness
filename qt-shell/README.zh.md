@@ -57,7 +57,19 @@ PNPM_EXECUTABLE=/path/to/pnpm \
 
 桌宠窗口中的聊天按钮会打开一个带系统边框且可独立调整大小的聊天窗口。该窗口承载由独立 Harness Session 提供的紧凑对话，并像主界面一样提供服务商/模型和推理等级选择器。其消息与模型上下文同主工作区聊天相互隔离，打开聊天也不会改变主窗口持久化的当前 Session。桌宠窗口仍可独立拖动、缩放和双击退出，聊天窗口可单独调整大小。
 
-Linux Wayland 会话通过 `DISPLAY` 提供 XWayland 时，外壳会选择 Qt 的 `xcb` 后端，使桌宠能读取全局鼠标坐标并保持显式窗口位置；显式设置的 `QT_QPA_PLATFORM` 优先。纯 Wayland 会话会保留原生 Wayland 行为：滚轮模型缩放仍可使用，但协议不会向客户端提供桌面全局坐标，因此模型只能在鼠标位于本应用持有的 surface 上时追踪鼠标。
+桌宠窗口的离开事件会立即隐藏绿色边缘，包括鼠标移到桌面或其他应用时。桌宠收到新的进入或鼠标事件前，全局鼠标轮询不会重新显示边缘，即使 XWayland 此时仍报告窗口内的旧坐标。
+
+Linux Wayland 会话通过 `DISPLAY` 提供 XWayland 时，外壳会选择 Qt 的 `xcb` 后端，使桌宠能读取全局鼠标坐标并保持显式窗口位置。指针定时器会直接查询 X11 root window，避免鼠标移入其他 surface 后继续使用 Qt 缓存的旧坐标；显式设置的 `QT_QPA_PLATFORM` 优先。纯 Wayland 会话会保留原生 Wayland 行为：滚轮模型缩放仍可使用，但协议不会向客户端提供桌面全局坐标，因此模型只能在鼠标位于本应用持有的 surface 上时追踪鼠标。
+
+在 GNOME Wayland 下，如果需要追踪原生 Wayland 窗口（包括桌面和 Chrome）中的鼠标，请构建并启用仓库附带的 GNOME Shell 扩展：
+
+```bash
+cmake --build qt-shell/build --target dsh-pointer-extension
+gnome-extensions install --force qt-shell/build/dsh-pointer@deepseek.ai.zip
+gnome-extensions enable dsh-pointer@deepseek.ai
+```
+
+扩展在 GNOME Shell 内读取合成器提供的桌面全局指针坐标，并通过 session bus 发布。Qt 外壳检测到该来源时优先使用它，否则回退到 XWayland 的 X11 来源。不使用桌宠时可以禁用扩展，以避免持续提供全局鼠标坐标。
 
 当主机 GPU 不可用时，外壳为两个 WebEngine 视图启用 WebGL2，并允许 Chromium 使用 SwiftShader 回退。外壳会清除会在 Chromium 启动前禁用或替换 WebGL 图形路径的 `QTWEBENGINE_DISABLE_GPU`、`QT_WEBENGINE_RENDERER` 和 `QT_QUICK_BACKEND`。外壳保留 Qt 按平台选择的 GL 实现，因为部分 Qt WebEngine 构建不接受显式 ANGLE/SwiftShader 实现参数。可以通过 `QTWEBENGINE_CHROMIUM_FLAGS` 覆盖部署环境的图形参数；外壳会保留已有值，只有在缺少 `--enable-webgl` 时才追加所需 WebGL 参数。
 
@@ -72,7 +84,7 @@ Linux Wayland 会话通过 `DISPLAY` 提供 XWayland 时，外壳会选择 Qt �
 ```bash
 sudo apt update
 sudo apt install qt6-base-dev qt6-webengine-dev qt6-webengine-dev-tools \
-  cmake build-essential
+  libx11-dev cmake build-essential
 ```
 
 构建 Harness 和 Qt 桌面外壳：

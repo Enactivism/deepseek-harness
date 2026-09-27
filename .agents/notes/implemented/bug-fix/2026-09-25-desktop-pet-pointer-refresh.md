@@ -10,17 +10,17 @@ The Qt shell could sample a desktop-global pointer position before the WebEngine
 
 ## Decision
 
-`HarnessWindow` marks the pet page ready after a successful `loadFinished` and keeps the existing 16-millisecond global-pointer timer active for the loaded page. Each tick maps the current `QCursor::pos()` into WebEngine client coordinates and injects a `mousemove` event, including `view`, `screenX`, and `screenY` fields. The event is sent in the page's main JavaScript world so the `l2d` document listener receives the same client coordinates as a browser mouse event.
+`HarnessWindow` marks the pet page ready after a successful `loadFinished` and keeps the existing 16-millisecond global-pointer timer active for the loaded page. On GNOME Wayland, the optional GNOME Shell extension publishes compositor-global coordinates over the session bus and the Qt shell consumes them when available. On Linux `xcb` without that bridge, each tick queries the X11 root window with `XQueryPointer`; other supported platforms use `QCursor::pos()`. The resulting desktop coordinates are mapped into WebEngine client coordinates and injected as a `mousemove` event, including `view`, `screenX`, and `screenY` fields. The event is sent in the page's main JavaScript world so the `l2d` document listener receives the same client coordinates as a browser mouse event.
 
 ## Alternatives considered
 
 **Reset the last-position cache after `loadFinished`.** Rejected because Live2D model loading and listener registration continue asynchronously after the page load event; one forced event can still arrive too early.
 
-**Install an operating-system global mouse hook.** Rejected because it adds platform-specific permissions and implementations, while the existing Qt cursor polling already provides global coordinates on the supported X11, Windows, and macOS backends. Native Wayland still does not expose desktop-global coordinates to ordinary clients.
+**Install an operating-system global mouse hook.** Rejected because it adds platform-specific permissions and implementations beyond the compositor-owned GNOME extension path needed for native Wayland. Native Wayland still does not expose desktop-global coordinates to ordinary clients without compositor cooperation.
 
 ## Consequences
 
-The model receives the current desktop pointer while the page and model finish initializing, including when the pointer remains outside the pet window. The loaded pet incurs one WebEngine JavaScript evaluation per pointer-poll interval even when the pointer is stationary. Pure Wayland sessions retain focused-surface-only tracking because the protocol does not expose a desktop-global pointer position.
+The model receives the current desktop pointer while the page and model finish initializing, including when the pointer remains outside the pet window. GNOME Wayland deployments can use the extension for native Wayland windows; Linux `xcb` deployments without it query the X11 server directly, so the pointer source does not depend on Qt's cached cursor value. The loaded pet incurs one WebEngine JavaScript evaluation per pointer-poll interval even when the pointer is stationary. Other pure Wayland sessions retain focused-surface-only tracking because the protocol does not expose a desktop-global pointer position.
 
 ## Verification
 

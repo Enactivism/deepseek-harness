@@ -43,6 +43,13 @@
 #include <QTcpSocket>
 #include <QHostAddress>
 
+#if defined(Q_OS_LINUX) && QT_CONFIG(xcb)
+#include <QtGui/qguiapplication_platform.h>
+
+#include <X11/Xlib.h>
+#undef Bool
+#endif
+
 namespace {
 constexpr auto kHarnessUrl = "http://127.0.0.1:3080";
 constexpr auto kDefaultNpmUserConfig = "/dev/null";
@@ -60,6 +67,36 @@ const QSize kPetControlArea(160, 64);
 const QSize kPetBaseSize(360, 480);
 const QSize kPetResizeStep(24, 32);
 const QSize kPetMinimumSize(240, 320);
+
+QPoint desktopPointerPosition() {
+#if defined(Q_OS_LINUX) && QT_CONFIG(xcb)
+    const auto *native_application =
+        qGuiApp->nativeInterface<QNativeInterface::QX11Application>();
+    if (native_application != nullptr && native_application->display() != nullptr) {
+        Display *display = native_application->display();
+        const Window root = DefaultRootWindow(display);
+        Window root_return = 0;
+        Window child_return = 0;
+        int root_x = 0;
+        int root_y = 0;
+        int window_x = 0;
+        int window_y = 0;
+        unsigned int mask = 0;
+        if (XQueryPointer(display,
+                          root,
+                          &root_return,
+                          &child_return,
+                          &root_x,
+                          &root_y,
+                          &window_x,
+                          &window_y,
+                          &mask)) {
+            return {root_x, root_y};
+        }
+    }
+#endif
+    return QCursor::pos();
+}
 
 constexpr auto kPetPageScript = R"JS(
 (() => {
@@ -198,6 +235,7 @@ HarnessWindow::HarnessWindow(QWidget *parent)
       network_manager_(new QNetworkAccessManager(this)),
       readiness_timer_(new QTimer(this)),
       pet_pointer_timer_(new QTimer(this)),
+      desktop_pointer_bridge_(new DesktopPointerBridge(this)),
       web_profile_(new QWebEngineProfile(QStringLiteral("deepseek-harness"), this)),
       web_view_(new QWebEngineView(this)),
       state_view_(new QWidget(this)),
@@ -388,7 +426,14 @@ HarnessWindow::HarnessWindow(QWidget *parent)
     pet_pointer_timer_->setInterval(kPetPointerPollIntervalMs);
     pet_pointer_timer_->setTimerType(Qt::PreciseTimer);
     connect(pet_pointer_timer_, &QTimer::timeout,
-            this, &HarnessWindow::updateDesktopPetPointer);
+            this, qOverload<>(&HarnessWindow::updateDesktopPetPointer));
+    connect(desktop_pointer_bridge_, &DesktopPointerBridge::pointerMoved,
+            this, &HarnessWindow::handleDesktopPointerMoved);
+    connect(desktop_pointer_bridge_, &DesktopPointerBridge::unavailable,
+            this, [](const QString &reason) {
+                qWarning() << "[deepseek-harness-qt] Global Wayland pointer bridge unavailable:"
+                           << reason;
+            });
     pet_layout->addWidget(pet_web_view_);
     pet_window_->hide();
 
@@ -712,7 +757,7 @@ void HarnessWindow::setDesktopPet(bool enabled) {
     if (desktop_pet_ == enabled) return;
     desktop_pet_ = enabled;
     pet_page_ready_ = false;
-    pet_pointer_inside_ = false;
+    pet_hover_ = {};
     scale_wheel_remainder_ = 0;
     if (enabled) {
         pet_window_->resize(kPetBaseSize);
@@ -721,13 +766,16 @@ void HarnessWindow::setDesktopPet(bool enabled) {
         pet_web_view_->setUrl(QUrl(QStringLiteral("%1/?dshDesktopPet=1").arg(kHarnessUrl)));
         pet_window_->show();
         pet_window_->raise();
-        if (desktop_pet::supportsGlobalPointerTracking(QGuiApplication::platformName())) {
+        desktop_pointer_bridge_->start();
+        if (desktop_pet::supportsGlobalPointerTracking(QGuiApplication::platformName())
+            || desktop_pointer_bridge_->isAvailable()) {
             pet_pointer_timer_->start();
         }
     } else {
         dragging_ = false;
         pet_page_ready_ = false;
         pet_pointer_timer_->stop();
+        desktop_pointer_bridge_->stop();
         setDesktopPetChat(false);
         pet_window_->hide();
         pet_web_view_->stop();
@@ -771,7 +819,7 @@ void HarnessWindow::preparePetPage(bool ok) {
         child->setPalette(palette);
     }
     pet_web_view_->page()->runJavaScript(petPageScript());
-    setDesktopPetHover(pet_pointer_inside_, true);
+    notifyDesktopPetHover(false, true);
     updateDesktopPetPointer();
 }
 
@@ -797,11 +845,21 @@ void HarnessWindow::notifyDesktopPetChatVisibility(bool open) {
 }
 
 void HarnessWindow::updateDesktopPetPointer() {
-    if (!desktop_pet_
-        || !pet_window_->isVisible()
-        || !desktop_pet::supportsGlobalPointerTracking(QGuiApplication::platformName())) return;
-    const QPoint screen_position = QCursor::pos();
-    setDesktopPetHover(pet_window_->frameGeometry().contains(screen_position));
+    if (!desktop_pet_ || !pet_window_->isVisible()) return;
+    if (desktop_pointer_bridge_->isAvailable()) {
+        if (desktop_pointer_bridge_->hasPosition()) {
+            updateDesktopPetPointer(desktop_pointer_bridge_->position());
+        }
+        return;
+    }
+    if (!desktop_pet::supportsGlobalPointerTracking(QGuiApplication::platformName())) return;
+    updateDesktopPetPointer(desktopPointerPosition());
+}
+
+void HarnessWindow::updateDesktopPetPointer(const QPoint &screen_position) {
+    if (!desktop_pet_ || !pet_window_->isVisible()) return;
+    notifyDesktopPetHover(pet_hover_.observeCursor(
+        pet_window_->frameGeometry().contains(screen_position)));
     if (!pet_page_ready_) return;
     const QPoint client_position = pet_web_view_->mapFromGlobal(screen_position);
     pet_web_view_->page()->runJavaScript(
@@ -809,12 +867,15 @@ void HarnessWindow::updateDesktopPetPointer() {
         QWebEngineScript::MainWorld);
 }
 
-void HarnessWindow::setDesktopPetHover(bool inside, bool force) {
-    const bool changed = pet_pointer_inside_ != inside;
-    pet_pointer_inside_ = inside;
+void HarnessWindow::handleDesktopPointerMoved(const QPoint &screen_position) {
+    if (!desktop_pet_) return;
+    updateDesktopPetPointer(screen_position);
+}
+
+void HarnessWindow::notifyDesktopPetHover(bool changed, bool force) {
     if ((!changed && !force) || !desktop_pet_ || !pet_page_ready_) return;
     pet_web_view_->page()->runJavaScript(
-        desktop_pet::desktopPetHoverFrameVisibilityScript(inside),
+        desktop_pet::desktopPetHoverFrameVisibilityScript(pet_hover_.inside()),
         QWebEngineScript::MainWorld);
 }
 
@@ -829,6 +890,8 @@ bool HarnessWindow::eventFilter(QObject *watched, QEvent *event) {
     if (mouse_event != nullptr) {
         global_position = mouse_event->globalPosition().toPoint();
     }
+    const bool is_pet_native_window = desktop_pet_ && pet_window_ != nullptr
+        && watched == pet_window_->windowHandle();
     const bool is_pet_widget = desktop_pet_
         && (watched == pet_window_
             || watched == pet_web_view_
@@ -836,21 +899,21 @@ bool HarnessWindow::eventFilter(QObject *watched, QEvent *event) {
     const bool inside_pet_window = mouse_event != nullptr && pet_window_ != nullptr
         && pet_window_->frameGeometry().contains(global_position);
     if (desktop_pet_ && mouse_event != nullptr) {
-        setDesktopPetHover(is_pet_widget || inside_pet_window);
-    } else if (is_pet_widget && event->type() == QEvent::Enter) {
-        setDesktopPetHover(true);
-    } else if (is_pet_widget && event->type() == QEvent::Leave) {
-        QTimer::singleShot(0, this, [this] {
-            if (!desktop_pet_ || pet_window_ == nullptr || !pet_window_->isVisible()) return;
-            if (desktop_pet::supportsGlobalPointerTracking(QGuiApplication::platformName())) {
-                setDesktopPetHover(pet_window_->frameGeometry().contains(QCursor::pos()));
-                return;
-            }
-            setDesktopPetHover(pet_window_->underMouse() || pet_web_view_->underMouse());
-        });
+        const bool inside_pet_surface = is_pet_native_window
+            ? pet_window_->rect().contains(mouse_event->position().toPoint())
+            : is_pet_widget && widget != nullptr
+                && widget->rect().contains(mouse_event->position().toPoint());
+        const bool inside = desktop_pet::supportsGlobalPointerTracking(
+            QGuiApplication::platformName()) ? inside_pet_window : inside_pet_surface;
+        notifyDesktopPetHover(inside ? pet_hover_.enter() : pet_hover_.leave());
+    } else if ((is_pet_native_window || is_pet_widget) && event->type() == QEvent::Enter) {
+        notifyDesktopPetHover(pet_hover_.enter());
+    } else if ((is_pet_native_window || watched == pet_window_ || watched == pet_web_view_)
+               && event->type() == QEvent::Leave) {
+        notifyDesktopPetHover(pet_hover_.leave());
     }
     const bool is_pet_target = desktop_pet_
-        && (is_pet_widget || inside_pet_window);
+        && (is_pet_native_window || is_pet_widget || inside_pet_window);
     const bool control_interaction = is_pet_target && mouse_event != nullptr
         && desktop_pet::isPetControlArea(
             pet_window_->mapFromGlobal(global_position),

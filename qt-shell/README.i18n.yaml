@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write qt-shell/README.md
-README.md: 1b0a9635783031ee2a216b4ff99349c80ada7dd5
-README.zh.md: a2bc03616655a9898a73ed62515c833aa45782b2
+README.md: 864a5e8e1ebff347b7c661d8e6a7e6ca44004855
+README.zh.md: e920a940fcfa20ba77e7982520c4c7e701400bb7

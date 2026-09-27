@@ -1,5 +1,8 @@
 #pragma once
 
+#include "desktop_pet_interaction.h"
+#include "desktop_pointer_bridge.h"
+
 #include <QMainWindow>
 #include <QPoint>
 
@@ -43,13 +46,16 @@ private:
     void preparePetPage(bool ok);
     void preparePetChatPage(bool ok);
     void notifyDesktopPetChatVisibility(bool open);
-    void setDesktopPetHover(bool inside, bool force = false);
+    void notifyDesktopPetHover(bool changed, bool force = false);
     void updateDesktopPetPointer();
+    void updateDesktopPetPointer(const QPoint &screen_position);
+    void handleDesktopPointerMoved(const QPoint &screen_position);
 
     QProcess *server_;
     QNetworkAccessManager *network_manager_;
     QTimer *readiness_timer_;
     QTimer *pet_pointer_timer_;
+    DesktopPointerBridge *desktop_pointer_bridge_;
     QWebEngineProfile *web_profile_;
     QWebEngineView *web_view_;
     QWidget *pet_window_ = nullptr;
@@ -73,7 +79,7 @@ private:
     bool owns_server_ = false;
     bool desktop_pet_ = false;
     bool pet_page_ready_ = false;
-    bool pet_pointer_inside_ = false;
+    desktop_pet::HoverPresence pet_hover_;
     QPoint drag_offset_{};
     bool dragging_ = false;
     int scale_wheel_remainder_ = 0;

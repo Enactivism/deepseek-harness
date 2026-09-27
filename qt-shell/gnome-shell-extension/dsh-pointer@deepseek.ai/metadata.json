@@ -1,0 +1,6 @@
+{
+  "uuid": "dsh-pointer@deepseek.ai",
+  "name": "DeepSeek Harness Desktop Pointer",
+  "description": "Provides the desktop pointer position to the DeepSeek Harness desktop pet.",
+  "shell-version": ["46"]
+}

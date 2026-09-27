@@ -57,7 +57,19 @@ After selecting a Live2D model, the Web client offers `Desktop pet`. This opens 
 
 The chat button in the pet window opens a separate, normally decorated and resizable chat window. That window hosts a compact conversation backed by its own Harness Session and exposes the same provider/model and reasoning-effort selector as the main interface. Its messages and model context are separate from the main workspace chat, and opening it does not change the main window's persisted current Session. The pet window keeps its own drag, scaling, and double-click exit gestures while the chat window can be resized independently.
 
-On a Linux Wayland session with XWayland available through `DISPLAY`, the shell selects Qt's `xcb` backend so the desktop pet can read global pointer coordinates and retain explicit window placement. An explicit `QT_QPA_PLATFORM` value takes precedence. A pure Wayland session keeps native Wayland behavior: wheel model scaling works, but the model can follow the pointer only while it is over a surface owned by the application because the protocol does not expose desktop-global coordinates to clients.
+The pet window's leave event hides the green frame immediately, including when the pointer moves to the desktop or another application. A global cursor poll cannot show it again until the pet receives a new enter or mouse event, even if XWayland still reports an in-window cursor position.
+
+On a Linux Wayland session with XWayland available through `DISPLAY`, the shell selects Qt's `xcb` backend so the desktop pet can read global pointer coordinates and retain explicit window placement. The pointer timer queries X11's root window directly, which avoids using a stale Qt cursor value after the pointer crosses into another surface. An explicit `QT_QPA_PLATFORM` value takes precedence. A pure Wayland session keeps native Wayland behavior: wheel model scaling works, but the model can follow the pointer only while it is over a surface owned by the application because the protocol does not expose desktop-global coordinates to clients.
+
+For GNOME Wayland, build and enable the bundled GNOME Shell extension to follow the pointer over native Wayland windows, including the desktop and Chrome:
+
+```bash
+cmake --build qt-shell/build --target dsh-pointer-extension
+gnome-extensions install --force qt-shell/build/dsh-pointer@deepseek.ai.zip
+gnome-extensions enable dsh-pointer@deepseek.ai
+```
+
+The extension reads GNOME Shell's compositor-global pointer position and publishes it over the session bus. The Qt shell uses that source when it is available and falls back to the X11 source on XWayland. Disable the extension when the desktop pet is not in use if global pointer access is not desired.
 
 The shell enables WebGL2 for both WebEngine views with Chromium's SwiftShader fallback when the host GPU is unavailable. It clears `QTWEBENGINE_DISABLE_GPU`, `QT_WEBENGINE_RENDERER`, and `QT_QUICK_BACKEND`, which would disable or replace the WebGL-capable graphics path before Chromium starts. It leaves Qt's platform-selected GL implementation unchanged because some Qt WebEngine builds reject explicit ANGLE/SwiftShader implementation flags. Override `QTWEBENGINE_CHROMIUM_FLAGS` to provide deployment-specific graphics flags; the shell preserves an existing value and only adds the required WebGL flags when `--enable-webgl` is absent.
 
@@ -72,7 +84,7 @@ Install Qt 6, Qt WebEngine, CMake, and the build tools:
 ```bash
 sudo apt update
 sudo apt install qt6-base-dev qt6-webengine-dev qt6-webengine-dev-tools \
-  cmake build-essential
+  libx11-dev cmake build-essential
 ```
 
 Build Harness and the Qt desktop shell:

@@ -26,6 +26,22 @@ int main() {
     expect(!desktop_pet::supportsGlobalPointerTracking(QStringLiteral("offscreen")),
            "headless backends must not claim desktop pointer support");
 
+    desktop_pet::HoverPresence hover;
+    expect(hover.observeCursor(true) && hover.inside(),
+           "a pointer initially inside the pet must reveal the frame");
+    expect(hover.leave() && !hover.inside(),
+           "leaving the pet must hide the frame before another application receives input");
+    expect(!hover.observeCursor(true) && !hover.inside(),
+           "a cursor position frozen inside the pet must not reveal the frame after exit");
+    expect(hover.enter() && hover.inside(),
+           "entering the pet again must restore the frame");
+    expect(hover.observeCursor(false) && !hover.inside(),
+           "a cursor position outside the pet must hide the frame");
+    expect(!hover.observeCursor(true) && !hover.inside(),
+           "a cursor poll alone must not undo an observed exit");
+    expect(hover.enter() && hover.inside(),
+           "a mouse event delivered to the pet must clear the exit state");
+
     int wheel_remainder = 0;
     expect(desktop_pet::consumeWheelSteps(60, wheel_remainder) == 0
                && wheel_remainder == 60,

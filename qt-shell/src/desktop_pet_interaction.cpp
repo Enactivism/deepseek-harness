@@ -21,6 +21,30 @@ bool supportsGlobalPointerTracking(const QString &platform_name) {
         || platform_name.compare(QStringLiteral("cocoa"), Qt::CaseInsensitive) == 0;
 }
 
+bool HoverPresence::inside() const {
+    return inside_;
+}
+
+bool HoverPresence::enter() {
+    left_surface_ = false;
+    const bool changed = !inside_;
+    inside_ = true;
+    return changed;
+}
+
+bool HoverPresence::leave() {
+    left_surface_ = true;
+    const bool changed = inside_;
+    inside_ = false;
+    return changed;
+}
+
+bool HoverPresence::observeCursor(bool inside) {
+    if (!inside) return leave();
+    if (left_surface_) return false;
+    return enter();
+}
+
 int consumeWheelSteps(int angle_delta, int &remainder) {
     const int accumulated = remainder + angle_delta;
     const int steps = accumulated / kWheelAngleStep;

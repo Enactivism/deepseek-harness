@@ -16,6 +16,26 @@ bool shouldPreferXcbPlatform(const QByteArray &configured_platform,
 /** Whether the selected Qt platform exposes usable desktop-global coordinates. */
 bool supportsGlobalPointerTracking(const QString &platform_name);
 
+/** Tracks hover while rejecting cursor positions cached after a native leave. */
+class HoverPresence {
+public:
+    /** Whether the pointer is currently inside the pet window. */
+    bool inside() const;
+
+    /** Accept a native entry or a mouse event delivered to the pet. */
+    bool enter();
+
+    /** Accept a native exit or a mouse event delivered outside the pet. */
+    bool leave();
+
+    /** Accept a polled cursor position; an inside value cannot undo a leave. */
+    bool observeCursor(bool inside);
+
+private:
+    bool inside_ = false;
+    bool left_surface_ = false;
+};
+
 /** Accumulate wheel angle input and return the number of complete wheel steps. */
 int consumeWheelSteps(int angle_delta, int &remainder);
 
