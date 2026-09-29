@@ -10,7 +10,7 @@ Closing the Qt shell window terminated the owned Harness service, so users could
 
 ## Decision
 
-`HarnessWindow` owns a `QSystemTrayIcon` with a generated `DH` icon and a context menu containing `Open` and `Close`. Double-clicking the tray icon restores and activates the main window. A normal main-window close hides the main, desktop-pet, and chat windows, ignores the close event, and keeps the Harness service running while the tray icon is available. The tray `Close` action and `File > Exit` set the explicit-quit flag, close the window, hide all auxiliary windows, hide the tray icon, and stop the owned service. When the desktop environment has no system tray, the close event retains direct-exit behavior so the process cannot become unreachable.
+`HarnessWindow` owns a `QSystemTrayIcon` with a generated `DH` icon and a context menu containing `Open` and `Close`. Double-clicking the tray icon restores and activates the main window. A normal main-window close hides only the main workspace, ignores the close event, and keeps the desktop pet, its chat window, and the Harness service running while the tray icon is available. The tray `Close` action and `File > Exit` set the explicit-quit flag, close the window, hide all auxiliary windows, hide the tray icon, and stop the owned service. When the desktop environment has no system tray, the close event retains direct-exit behavior so the process cannot become unreachable.
 
 ## Alternatives considered
 
@@ -18,7 +18,7 @@ Closing the Qt shell window terminated the owned Harness service, so users could
 
 **Implement the tray in the Web UI.** Rejected because the tray icon and process shutdown belong to the native Qt shell and must remain available when the WebEngine window is hidden.
 
-**Leave the desktop-pet or chat windows visible after hiding the main window.** Rejected because a window close is treated as hiding the whole desktop shell; reopening from the tray starts from one visible workspace window and avoids orphaned auxiliary windows.
+**Hide the desktop-pet and chat windows together with the main window.** Rejected because the desktop pet is an independent user-facing window; closing the workspace must not stop its pointer tracking or interrupt its interaction.
 
 ## Consequences
 

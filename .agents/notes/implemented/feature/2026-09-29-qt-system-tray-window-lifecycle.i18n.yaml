@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-29-qt-system-tray-window-lifecycle.md
-2026-09-29-qt-system-tray-window-lifecycle.md: 13a0b5bf1f9e87bbfcdb8f39b4fa6bb30ead1b96
-2026-09-29-qt-system-tray-window-lifecycle.zh.md: e224b92569ed2be3de1453643f72fe0054d6601e
+2026-09-29-qt-system-tray-window-lifecycle.md: 794a9badb635d3a70a565a1c655e2870e0333fe3
+2026-09-29-qt-system-tray-window-lifecycle.zh.md: 885c7f12ed6766aae0cee3035108ccb89ca6209d

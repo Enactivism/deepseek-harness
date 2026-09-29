@@ -1087,10 +1087,6 @@ void HarnessWindow::showFromTray() {
 }
 
 void HarnessWindow::hideToTray() {
-    setDesktopPetChat(false);
-    if (desktop_pet_) setDesktopPet(false);
-    if (pet_window_ != nullptr) pet_window_->hide();
-    if (chat_window_ != nullptr) chat_window_->hide();
     hide();
 }
 
