@@ -11,12 +11,14 @@ class QNetworkAccessManager;
 class QProcess;
 class QProgressBar;
 class QPushButton;
+class QMenu;
 class QStackedLayout;
 class QTimer;
 class QWebEngineProfile;
 class QWebEngineView;
 class QUrl;
 class QWidget;
+class QSystemTrayIcon;
 
 class HarnessWindow final : public QMainWindow {
     Q_OBJECT
@@ -39,6 +41,9 @@ private:
     void showErrorState(const QString &title, const QString &description);
     void retryHarness();
     void reloadWebView();
+    void showFromTray();
+    void hideToTray();
+    void quitApplication();
     void updateStatus(const QString &message);
     void toggleDesktopPet();
     void setDesktopPet(bool enabled);
@@ -58,6 +63,8 @@ private:
     DesktopPointerBridge *desktop_pointer_bridge_;
     QWebEngineProfile *web_profile_;
     QWebEngineView *web_view_;
+    QSystemTrayIcon *tray_icon_;
+    QMenu *tray_menu_;
     QWidget *pet_window_ = nullptr;
     QWebEngineView *pet_web_view_ = nullptr;
     QWidget *chat_window_ = nullptr;
@@ -76,6 +83,7 @@ private:
     bool page_loaded_ = false;
     bool page_ready_ = false;
     bool stopping_ = false;
+    bool quit_requested_ = false;
     bool owns_server_ = false;
     bool desktop_pet_ = false;
     bool pet_page_ready_ = false;

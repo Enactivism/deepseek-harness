@@ -6,7 +6,9 @@ This directory contains the Qt 6 desktop shell for DeepSeek Harness. It does not
 
 1. starts `pnpm dsh web` through `QProcess`;
 2. loads `http://127.0.0.1:3080` through `QWebEngineView`;
-3. terminates the Harness service it owns when the window closes.
+3. hides the desktop windows to the system tray when the main window closes, keeping the Harness service running until the tray menu's `Close` action or `File > Exit` is selected.
+
+The tray menu provides `Open` and `Close` actions. Double-clicking the tray icon opens the main window; opening it also restores focus to the workspace.
 
 ## Build
 

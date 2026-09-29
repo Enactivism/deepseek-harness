@@ -2,14 +2,18 @@
 #include "desktop_pet_interaction.h"
 
 #include <QCloseEvent>
+#include <QAction>
 #include <QColor>
 #include <QCoreApplication>
 #include <QCursor>
 #include <QDir>
+#include <QFont>
 #include <QFrame>
 #include <QGraphicsDropShadowEffect>
+#include <QIcon>
 #include <QKeySequence>
 #include <QLabel>
+#include <QMenu>
 #include <QMenuBar>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
@@ -35,7 +39,9 @@
 #include <QWebEngineSettings>
 #include <QMouseEvent>
 #include <QPalette>
+#include <QPainter>
 #include <QScreen>
+#include <QSystemTrayIcon>
 #include <QGuiApplication>
 #include <QSize>
 #include <QWheelEvent>
@@ -67,6 +73,25 @@ const QSize kPetControlArea(160, 64);
 const QSize kPetBaseSize(360, 480);
 const QSize kPetResizeStep(24, 32);
 const QSize kPetMinimumSize(240, 320);
+
+QIcon createTrayIcon() {
+    QPixmap pixmap(64, 64);
+    pixmap.fill(Qt::transparent);
+
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(QColor("#66e3bd"));
+    painter.drawRoundedRect(QRectF(4, 4, 56, 56), 14, 14);
+    painter.setPen(QColor("#07151a"));
+    auto font = painter.font();
+    font.setBold(true);
+    font.setPixelSize(24);
+    painter.setFont(font);
+    painter.drawText(pixmap.rect(), Qt::AlignCenter, QStringLiteral("DH"));
+
+    return QIcon(pixmap);
+}
 
 QPoint desktopPointerPosition() {
 #if defined(Q_OS_LINUX) && QT_CONFIG(xcb)
@@ -238,6 +263,8 @@ HarnessWindow::HarnessWindow(QWidget *parent)
       desktop_pointer_bridge_(new DesktopPointerBridge(this)),
       web_profile_(new QWebEngineProfile(QStringLiteral("deepseek-harness"), this)),
       web_view_(new QWebEngineView(this)),
+      tray_icon_(new QSystemTrayIcon(this)),
+      tray_menu_(new QMenu(this)),
       state_view_(new QWidget(this)),
       state_icon_(new QLabel("DH", state_view_)),
       state_kicker_(new QLabel("DESKTOP SHELL", state_view_)),
@@ -246,6 +273,25 @@ HarnessWindow::HarnessWindow(QWidget *parent)
       state_progress_(new QProgressBar(state_view_)),
       state_action_(new QPushButton("重新连接", state_view_)) {
     setWindowTitle("DeepSeek Harness");
+    const auto tray_icon = createTrayIcon();
+    setWindowIcon(tray_icon);
+    tray_icon_->setIcon(tray_icon);
+    tray_icon_->setToolTip(QStringLiteral("DeepSeek Harness"));
+    auto *open_tray_action = tray_menu_->addAction(QStringLiteral("打开"));
+    connect(open_tray_action, &QAction::triggered, this, &HarnessWindow::showFromTray);
+    tray_menu_->addSeparator();
+    auto *quit_tray_action = tray_menu_->addAction(QStringLiteral("关闭"));
+    connect(quit_tray_action, &QAction::triggered, this, &HarnessWindow::quitApplication);
+    tray_icon_->setContextMenu(tray_menu_);
+    connect(tray_icon_, &QSystemTrayIcon::activated, this,
+            [this](QSystemTrayIcon::ActivationReason reason) {
+                if (reason == QSystemTrayIcon::DoubleClick) showFromTray();
+            });
+    if (QSystemTrayIcon::isSystemTrayAvailable()) {
+        tray_icon_->show();
+    } else {
+        qWarning() << "[deepseek-harness-qt] System tray is unavailable; window close will exit";
+    }
     setMinimumSize(960, 640);
     resize(1440, 920);
 
@@ -524,7 +570,7 @@ HarnessWindow::HarnessWindow(QWidget *parent)
     connect(reload_action, &QAction::triggered, this, &HarnessWindow::reloadWebView);
     file_menu->addSeparator();
     auto *quit_action = file_menu->addAction("退出");
-    connect(quit_action, &QAction::triggered, this, &QWidget::close);
+    connect(quit_action, &QAction::triggered, this, &HarnessWindow::quitApplication);
 
     showLoadingState("正在连接本地工作区", "正在启动 Harness 服务并等待网页插件图…");
     readiness_timer_->setInterval(kReadinessIntervalMs);
@@ -1033,13 +1079,43 @@ void HarnessWindow::reloadWebView() {
     web_view_->reload();
 }
 
+void HarnessWindow::showFromTray() {
+    if (quit_requested_) return;
+    showNormal();
+    raise();
+    activateWindow();
+}
+
+void HarnessWindow::hideToTray() {
+    setDesktopPetChat(false);
+    if (desktop_pet_) setDesktopPet(false);
+    if (pet_window_ != nullptr) pet_window_->hide();
+    if (chat_window_ != nullptr) chat_window_->hide();
+    hide();
+}
+
+void HarnessWindow::quitApplication() {
+    if (quit_requested_) return;
+    quit_requested_ = true;
+    close();
+    QCoreApplication::quit();
+}
+
 void HarnessWindow::updateStatus(const QString &message) {
     qInfo().noquote() << "[deepseek-harness-qt] Status:" << message.left(240);
 }
 
 void HarnessWindow::closeEvent(QCloseEvent *event) {
+    if (!quit_requested_ && tray_icon_ != nullptr && tray_icon_->isVisible()) {
+        hideToTray();
+        event->ignore();
+        updateStatus("窗口已隐藏到系统托盘");
+        return;
+    }
     setDesktopPetChat(false);
     if (pet_window_ != nullptr) pet_window_->hide();
+    if (chat_window_ != nullptr) chat_window_->hide();
+    if (tray_icon_ != nullptr) tray_icon_->hide();
     stopHarness();
     event->accept();
 }
